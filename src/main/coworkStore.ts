@@ -576,6 +576,29 @@ interface CoworkMessageRow {
   sequence: number | null;
 }
 
+/** Shared row mapping; corrupt metadata is discarded rather than failing the read. */
+const mapCoworkMessageRow = (row: CoworkMessageRow, sessionId: string): CoworkMessage => {
+  let metadata: Record<string, unknown> | undefined;
+  if (row.metadata) {
+    try {
+      metadata = JSON.parse(row.metadata);
+    } catch {
+      console.warn(
+        `[CoworkStore] corrupt metadata detected for message ${row.id} in session ${sessionId}, discarding metadata`,
+      );
+      metadata = undefined;
+    }
+  }
+  return {
+    id: row.id,
+    type: row.type as CoworkMessageType,
+    content: row.content,
+    timestamp: row.created_at,
+    ...(row.sequence != null ? { sequence: row.sequence } : {}),
+    metadata,
+  };
+};
+
 interface CoworkUserMemoryRow {
   id: string;
   text: string;
@@ -1394,14 +1417,56 @@ export class CoworkStore {
       [sessionId, limit, offset],
     );
 
-    return rows.map(row => ({
-      id: row.id,
-      type: row.type as CoworkMessageType,
-      content: row.content,
-      timestamp: row.created_at,
-      ...(row.sequence != null ? { sequence: row.sequence } : {}),
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-    }));
+    return rows.map(row => mapCoworkMessageRow(row, sessionId));
+  }
+
+  /**
+   * Newest-first pages of a session's messages, for readers that fill a budget
+   * from the tail and stop early (history restore on session rebuild). The
+   * ordering key mirrors getPagedSessionMessages in reverse.
+   */
+  getSessionMessagesDesc(sessionId: string, limit: number, offset: number): CoworkMessage[] {
+    const rows = this.getAll<CoworkMessageRow>(
+      `
+      SELECT id, type, content, metadata, created_at, sequence
+      FROM cowork_messages
+      WHERE session_id = ?
+      ORDER BY COALESCE(sequence, created_at) DESC, created_at DESC, ROWID DESC
+      LIMIT ? OFFSET ?
+    `,
+      [sessionId, limit, offset],
+    );
+
+    return rows.map(row => mapCoworkMessageRow(row, sessionId));
+  }
+
+  /**
+   * Whole-session message totals via SQL aggregate: the paged restore path no
+   * longer materializes the transcript, but diagnostics still report its size.
+   */
+  getSessionMessageStats(sessionId: string): {
+    messageCount: number;
+    contentBytes: number;
+    metadataBytes: number;
+  } {
+    const row = this.db
+      .prepare(
+        `
+        SELECT COUNT(*) AS messageCount,
+          COALESCE(SUM(LENGTH(CAST(content AS BLOB))), 0) AS contentBytes,
+          COALESCE(SUM(LENGTH(CAST(COALESCE(metadata, '') AS BLOB))), 0) AS metadataBytes
+        FROM cowork_messages
+        WHERE session_id = ?
+      `,
+      )
+      .get(sessionId) as
+      | { messageCount: number; contentBytes: number; metadataBytes: number }
+      | undefined;
+    return {
+      messageCount: row?.messageCount ?? 0,
+      contentBytes: row?.contentBytes ?? 0,
+      metadataBytes: row?.metadataBytes ?? 0,
+    };
   }
 
   private getSessionMessages(sessionId: string): CoworkMessage[] {
@@ -1418,27 +1483,7 @@ export class CoworkStore {
       [sessionId],
     );
 
-    return rows.map(row => {
-      let metadata: Record<string, unknown> | undefined;
-      if (row.metadata) {
-        try {
-          metadata = JSON.parse(row.metadata);
-        } catch {
-          console.warn(
-            `[CoworkStore] corrupt metadata detected for message ${row.id} in session ${sessionId}, discarding metadata`,
-          );
-          metadata = undefined;
-        }
-      }
-      return {
-        id: row.id,
-        type: row.type as CoworkMessageType,
-        content: row.content,
-        timestamp: row.created_at,
-        ...(row.sequence != null ? { sequence: row.sequence } : {}),
-        metadata,
-      };
-    });
+    return rows.map(row => mapCoworkMessageRow(row, sessionId));
   }
 
   addMessage(

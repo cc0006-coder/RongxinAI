@@ -858,3 +858,55 @@ test('backfillEmptyAgentModels assigns the current default model to empty agents
     ['writer', 'deepseek-v3.2'],
   ]);
 });
+
+test('getSessionMessagesDesc returns newest-first pages in reverse chronological order', () => {
+  const sid = 'sess-desc';
+  insertSession(sid);
+  for (let i = 1; i <= 7; i += 1) {
+    insertMessage(`m${i}`, sid, 'user', `msg-${i}`, null, i, 1000 + i);
+  }
+
+  expect(store.getSessionMessagesDesc(sid, 3, 0).map(m => m.id)).toEqual(['m7', 'm6', 'm5']);
+  expect(store.getSessionMessagesDesc(sid, 3, 3).map(m => m.id)).toEqual(['m4', 'm3', 'm2']);
+  expect(store.getSessionMessagesDesc(sid, 3, 6).map(m => m.id)).toEqual(['m1']);
+  expect(store.getSessionMessagesDesc(sid, 3, 7)).toEqual([]);
+});
+
+test('getSessionMessagesDesc mirrors the ascending page order in reverse', () => {
+  const sid = 'sess-desc-order';
+  insertSession(sid);
+  for (let i = 1; i <= 10; i += 1) {
+    insertMessage(`m${i}`, sid, i % 2 === 1 ? 'user' : 'assistant', `msg-${i}`, null, i, 1000 + i);
+  }
+
+  const ascending = store.getPagedSessionMessages(sid, 10, 0).map(m => m.id);
+  const descending: string[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = store.getSessionMessagesDesc(sid, 4, offset);
+    if (page.length === 0) break;
+    descending.push(...page.map(m => m.id));
+    offset += page.length;
+    if (page.length < 4) break;
+  }
+  expect(descending).toEqual([...ascending].reverse());
+});
+
+test('getSessionMessageStats aggregates totals without materializing messages', () => {
+  const sid = 'sess-stats';
+  insertSession(sid);
+  insertMessage('a', sid, 'user', 'hello', '{"x":1}', 1);
+  // Multibyte content: 2 characters, 6 UTF-8 bytes — stats must count bytes.
+  insertMessage('b', sid, 'assistant', '你好', null, 2);
+
+  const stats = store.getSessionMessageStats(sid);
+  expect(stats.messageCount).toBe(2);
+  expect(stats.contentBytes).toBe(5 + 6);
+  expect(stats.metadataBytes).toBe(Buffer.byteLength('{"x":1}', 'utf8'));
+
+  expect(store.getSessionMessageStats('missing-session')).toEqual({
+    messageCount: 0,
+    contentBytes: 0,
+    metadataBytes: 0,
+  });
+});

@@ -131,8 +131,9 @@ import {
   type PiBackgroundCompletionResult,
 } from './piBackgroundCompletion';
 import {
-  buildPiConversationPrompt,
   calculatePiConversationHistoryCharLimit,
+  restorePiConversationPrompt,
+  summarizePiHistoryFromStore,
 } from './piConversationContext';
 import { getPiBashCommandViolation, normalizePiBashTimeoutSeconds } from './piBashToolGuidelines';
 import { PiBuiltinFileToolName } from './piWriteTokenLimit';
@@ -213,22 +214,6 @@ import {
   STREAM_STALL_TIMEOUT_MS,
   resolveStreamStallTimeoutMs,
 } from './piStreamStallRecovery';
-
-const summarizePiHistory = (messages: readonly CoworkMessage[]) => {
-  let contentBytes = 0;
-  let metadataBytes = 0;
-  for (const message of messages) {
-    contentBytes += Buffer.byteLength(message.content, 'utf8');
-    if (message.metadata) {
-      try {
-        metadataBytes += Buffer.byteLength(JSON.stringify(message.metadata), 'utf8');
-      } catch {
-        // Ignore malformed metadata in diagnostics; the normal session path handles it.
-      }
-    }
-  }
-  return { messageCount: messages.length, contentBytes, metadataBytes };
-};
 
 // ── Types ──
 
@@ -1735,21 +1720,21 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
         `[PiRuntime] continueSession: session ${sessionId} not active or was aborted, restoring context via prompt`,
       );
       const historyLoadStartedAt = Date.now();
-      // Rebuilds need the full transcript: the default page size (30) would
-      // amputate everything but the last few minutes of a long task.
-      // buildPiConversationPrompt applies the character budget instead.
-      const storedSession = this.store?.getSession(sessionId, null);
-      const history = storedSession?.messages ?? [];
+      // Read the transcript tail in pages and stop at the character budget
+      // instead of materializing the full history; the injected prompt is
+      // identical because the selection rule only ever walks newest-first.
+      // Metadata still comes from a zero-message read for mode/experts/cwd.
+      const storedSession = this.store?.getSession(sessionId, 0);
       const chatMode =
         options.sessionMode === CoworkSessionMode.Chat ||
         storedSession?.mode === CoworkSessionMode.Chat;
-      const piPrompt = buildPiConversationPrompt(history, prompt, {
+      const piPrompt = restorePiConversationPrompt(this.store, sessionId, prompt, {
         maxChars: this.resolveConversationHistoryCharLimit(undefined, undefined, chatMode),
         ocrCommandFor: this.bundledOcrHelper?.commandFor,
       });
       agentResourceDiagnostics.recordPiHistoryRestored(sessionId, {
         source: 'continue',
-        ...summarizePiHistory(history),
+        ...summarizePiHistoryFromStore(this.store, sessionId),
         promptChars: piPrompt.length,
         restoreMs: Date.now() - historyLoadStartedAt,
       });
@@ -1803,12 +1788,11 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
       unattendedTopologyChanged
     ) {
       const historyLoadStartedAt = Date.now();
-      // Full transcript, not the default page: see the continue-rebuild note.
-      const history = this.store?.getSession(sessionId, null)?.messages ?? [];
+      // Paged tail read, not a full transcript: see the continue-rebuild note.
       if (mcpToolTopologyChanged) {
         console.log('[PiRuntime] recreating session after MCP tool manifest refresh');
       }
-      const piPrompt = buildPiConversationPrompt(history, prompt, {
+      const piPrompt = restorePiConversationPrompt(this.store, sessionId, prompt, {
         maxChars: this.resolveConversationHistoryCharLimit(
           typeof active.model.contextWindow === 'number' ? active.model.contextWindow : undefined,
           typeof active.model.maxTokens === 'number' ? active.model.maxTokens : undefined,
@@ -1818,7 +1802,7 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
       });
       agentResourceDiagnostics.recordPiHistoryRestored(sessionId, {
         source: 'recreate',
-        ...summarizePiHistory(history),
+        ...summarizePiHistoryFromStore(this.store, sessionId),
         promptChars: piPrompt.length,
         restoreMs: Date.now() - historyLoadStartedAt,
       });
@@ -1851,9 +1835,8 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
     const skillsChanged = !haveSameStringList(requestedSkillIds, active.requestedSkillIds);
     if (skillsChanged) {
       const historyLoadStartedAt = Date.now();
-      // Full transcript, not the default page: see the continue-rebuild note.
-      const history = this.store?.getSession(sessionId, null)?.messages ?? [];
-      const piPrompt = buildPiConversationPrompt(history, prompt, {
+      // Paged tail read, not a full transcript: see the continue-rebuild note.
+      const piPrompt = restorePiConversationPrompt(this.store, sessionId, prompt, {
         maxChars: this.resolveConversationHistoryCharLimit(
           typeof active.model.contextWindow === 'number' ? active.model.contextWindow : undefined,
           typeof active.model.maxTokens === 'number' ? active.model.maxTokens : undefined,
@@ -1863,7 +1846,7 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
       });
       agentResourceDiagnostics.recordPiHistoryRestored(sessionId, {
         source: 'skills-change',
-        ...summarizePiHistory(history),
+        ...summarizePiHistoryFromStore(this.store, sessionId),
         promptChars: piPrompt.length,
         restoreMs: Date.now() - historyLoadStartedAt,
       });
@@ -2256,24 +2239,37 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
   /** Persist a terminal result for tool calls still open when the user pauses. */
   private closeInterruptedToolUses(sessionId: string): void {
     const store = this.store;
-    if (!store || typeof store.getSession !== 'function') return;
+    if (!store || typeof store.getSessionMessagesDesc !== 'function') return;
 
-    let session: ReturnType<CoworkStore['getSession']> = null;
+    // Open tool calls can only live in the current turn, so scan backward from
+    // the tail and stop at the most recent user message instead of reading the
+    // whole transcript. Iteration below stays oldest-first to keep the persist
+    // order identical to a full scan.
+    const tailNewestFirst: CoworkMessage[] = [];
+    const pageSize = 200;
+    let offset = 0;
     try {
-      session = store.getSession(sessionId, null);
+      for (;;) {
+        const page = store.getSessionMessagesDesc(sessionId, pageSize, offset);
+        if (page.length === 0) break;
+        offset += page.length;
+        tailNewestFirst.push(...page);
+        if (page.some(message => message.type === 'user') || page.length < pageSize) break;
+      }
     } catch {
       return;
     }
-    if (!session?.messages?.length) return;
+    if (tailNewestFirst.length === 0) return;
+    const messages = tailNewestFirst.reverse();
 
     const closed = new Set<string>();
-    for (const message of session.messages) {
+    for (const message of messages) {
       if (message.type !== 'tool_result') continue;
       const toolUseId = message.metadata?.toolUseId;
       if (typeof toolUseId === 'string' && toolUseId) closed.add(toolUseId);
     }
 
-    for (const message of session.messages) {
+    for (const message of messages) {
       if (message.type !== 'tool_use') continue;
       const toolUseId = message.metadata?.toolUseId;
       if (typeof toolUseId !== 'string' || !toolUseId || closed.has(toolUseId)) continue;
