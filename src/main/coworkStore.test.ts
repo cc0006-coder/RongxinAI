@@ -910,3 +910,69 @@ test('getSessionMessageStats aggregates totals without materializing messages', 
     metadataBytes: 0,
   });
 });
+
+// Same DDL as sqliteStore initSchema; the minimal test schema omits indexes.
+const CREATE_SESSION_ORDER_INDEX = `
+  CREATE INDEX IF NOT EXISTS idx_cowork_messages_session_order
+  ON cowork_messages(session_id, COALESCE(sequence, created_at), created_at);
+`;
+
+test('session message pages use the ordering index, not a temp b-tree sort', () => {
+  const sid = 'sess-plan';
+  insertSession(sid);
+  insertMessage('p1', sid, 'user', 'one', null, 1);
+  db.exec(CREATE_SESSION_ORDER_INDEX);
+
+  // Keep the SQL text identical to getPagedSessionMessages / getSessionMessagesDesc.
+  const pagedAsc = db
+    .prepare(
+      `EXPLAIN QUERY PLAN SELECT id, type, content, metadata, created_at, sequence
+       FROM cowork_messages WHERE session_id = ?
+       ORDER BY COALESCE(sequence, created_at) ASC, created_at ASC, ROWID ASC LIMIT ? OFFSET ?`,
+    )
+    .all(sid, 50, 0) as Array<{ detail: string }>;
+  const pagedDesc = db
+    .prepare(
+      `EXPLAIN QUERY PLAN SELECT id, type, content, metadata, created_at, sequence
+       FROM cowork_messages WHERE session_id = ?
+       ORDER BY COALESCE(sequence, created_at) DESC, created_at DESC, ROWID DESC LIMIT ? OFFSET ?`,
+    )
+    .all(sid, 50, 0) as Array<{ detail: string }>;
+
+  for (const plan of [pagedAsc, pagedDesc]) {
+    const detail = plan.map(row => row.detail).join('\n');
+    expect(detail).not.toContain('TEMP B-TREE');
+    expect(detail).toContain('idx_cowork_messages_session_order');
+  }
+});
+
+test('descending pages mirror ascending order across null sequences and timestamp ties', () => {
+  const sid = 'sess-desc-ties';
+  insertSession(sid);
+  const now = 1_700_000_000_000;
+  const insertRaw = (id: string, createdAt: number, sequence: number | null): void => {
+    db.prepare(
+      `INSERT INTO cowork_messages (id, session_id, type, content, metadata, created_at, sequence)
+       VALUES (?, ?, 'user', ?, NULL, ?, ?)`,
+    ).run(id, sid, id, createdAt, sequence);
+  };
+  // Gateway backfill can insert an older timestamp after newer rows; ties and
+  // null sequences must not break the reverse-page mirror.
+  insertRaw('tie-a', now, null);
+  insertRaw('tie-b', now, null);
+  insertRaw('seq-1', now - 10, 1);
+  insertRaw('seq-2', now - 5, 2);
+  insertRaw('backfill-older', now - 20, null);
+
+  const ascending = store.getPagedSessionMessages(sid, 10, 0).map(m => m.id);
+  const descending: string[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = store.getSessionMessagesDesc(sid, 2, offset);
+    if (page.length === 0) break;
+    descending.push(...page.map(m => m.id));
+    offset += page.length;
+    if (page.length < 2) break;
+  }
+  expect(descending).toEqual([...ascending].reverse());
+});

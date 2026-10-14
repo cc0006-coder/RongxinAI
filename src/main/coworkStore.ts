@@ -1402,17 +1402,15 @@ export class CoworkStore {
   }
 
   getPagedSessionMessages(sessionId: string, limit: number, offset: number): CoworkMessage[] {
+    // Single-level query: the previous wrapped form defeated the ordering
+    // index and re-sorted the whole session per page (temp b-tree).
     const rows = this.getAll<CoworkMessageRow>(
       `
       SELECT id, type, content, metadata, created_at, sequence
-      FROM (
-        SELECT id, type, content, metadata, created_at, sequence, ROWID as rowid_
-        FROM cowork_messages
-        WHERE session_id = ?
-        ORDER BY COALESCE(sequence, created_at) ASC, created_at ASC, ROWID ASC
-        LIMIT ? OFFSET ?
-      )
-      ORDER BY COALESCE(sequence, created_at) ASC, created_at ASC, rowid_ ASC
+      FROM cowork_messages
+      WHERE session_id = ?
+      ORDER BY COALESCE(sequence, created_at) ASC, created_at ASC, ROWID ASC
+      LIMIT ? OFFSET ?
     `,
       [sessionId, limit, offset],
     );
