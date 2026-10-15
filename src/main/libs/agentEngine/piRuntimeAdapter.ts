@@ -175,6 +175,7 @@ import { PiAssistantEventType } from './piStreamConstants';
 import { PiPendingMessageQueue } from './piPendingMessageQueue';
 import { shouldExposeAskUserQuestionTool } from './piUnattendedPolicy';
 import { createPiWorkLoop } from './piWorkLoop';
+import { resolvePiTurnWorkflowSkills } from './piTurnWorkflow';
 import { PiWriteTokenLimitRecovery } from './piWriteTokenLimit';
 import { collectPiSystemPromptContributions } from './piSystemPromptContributions';
 import { createPiPromptOverrides } from './piPromptOverrides';
@@ -325,6 +326,7 @@ interface ActivePiSession {
   requestedSystemPrompt: string;
   requestedModelOverride?: string;
   requestedSkillIds: string[] | undefined;
+  requestedWorkflowSkillIds: string[] | undefined;
   requestedExpertIds: string[];
   /** Experts selected for the current turn, retained when messages are persisted. */
   turnExperts: CoworkMessageExpertIdentity[];
@@ -1090,13 +1092,15 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
         resourceState.expertSkillDirs,
       );
 
-      const shortcutKindForContract = isAcademicResearchSkillSet(resourceState.skillIds)
+      const workflowSkillIds = resolvePiTurnWorkflowSkills({
+        attachedSkillIds: options.attachedSkillIds,
+        previousWorkflowSkillIds: options._workflowSkillIdsOverride,
+        availableSkillIds: resourceState.skillIds,
+      });
+      const shortcutKindForContract = isAcademicResearchSkillSet(workflowSkillIds)
         ? null
-        : resolveShortcutWorkflowKind(resourceState.skillIds);
-      const workbenchContract = this.createWorkbenchContract(
-        options.sessionMode,
-        resourceState.skillIds,
-      );
+        : resolveShortcutWorkflowKind(workflowSkillIds);
+      const workbenchContract = this.createWorkbenchContract(options.sessionMode, workflowSkillIds);
       if (this.workbenchTaskService && !chatMode) {
         const workbench = this.workbenchTaskService.beginRun({
           sessionId,
@@ -1330,7 +1334,7 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
       // session (and reloads the same state directory after a session restart).
       const researchRun =
         options.sessionMode !== CoworkSessionMode.Chat &&
-        isAcademicResearchSkillSet(resourceState.skillIds)
+        isAcademicResearchSkillSet(workflowSkillIds)
           ? new PiResearchRunController({
               sessionId,
               workspaceRoot,
@@ -1519,6 +1523,7 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
         requestedSystemPrompt: basePrompt,
         requestedModelOverride: options.modelOverride,
         requestedSkillIds: resourceState.skillIds,
+        requestedWorkflowSkillIds: workflowSkillIds,
         requestedExpertIds: expertIds,
         turnExperts: (
           this.store?.getSession(sessionId, 0, { includeArtifacts: false })?.experts ?? []
@@ -1760,6 +1765,11 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
         goalMode: options.goalMode ?? active?.goalMode,
         unattended: nextUnattended,
         _piPromptOverride: piPrompt,
+        _workflowSkillIdsOverride: resolvePiTurnWorkflowSkills({
+          attachedSkillIds: options.attachedSkillIds,
+          previousWorkflowSkillIds: active?.requestedWorkflowSkillIds,
+          availableSkillIds: options.skillIds,
+        }),
       });
     }
 
@@ -1770,6 +1780,15 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
         : normalizeSkillIds(options.skillIds);
     const requestedExpertIds =
       options.expertIds === undefined ? active.requestedExpertIds : explicitExpertIds;
+    const requestedWorkflowSkillIds = resolvePiTurnWorkflowSkills({
+      attachedSkillIds: options.attachedSkillIds,
+      previousWorkflowSkillIds: active.requestedWorkflowSkillIds,
+      availableSkillIds: requestedSkillIds,
+    });
+    const workflowChanged = !haveSameStringList(
+      requestedWorkflowSkillIds,
+      active.requestedWorkflowSkillIds,
+    );
     const requestedSessionMode =
       options.sessionMode ??
       (active.workbenchContract.kind === WorkbenchContractKind.Chat
@@ -1792,7 +1811,8 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
       nextCodemode !== active.codemodeEnabled ||
       nextMcpNativeBridge !== active.mcpNativeBridge ||
       mcpToolTopologyChanged ||
-      unattendedTopologyChanged
+      unattendedTopologyChanged ||
+      workflowChanged
     ) {
       const historyLoadStartedAt = Date.now();
       // Paged tail read, not a full transcript: see the continue-rebuild note.
@@ -1825,6 +1845,7 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
         mcpNativeBridge: nextMcpNativeBridge,
         unattended: nextUnattended,
         _piPromptOverride: piPrompt,
+        _workflowSkillIdsOverride: requestedWorkflowSkillIds,
       });
     }
 
@@ -1869,6 +1890,7 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
         mcpNativeBridge: nextMcpNativeBridge,
         unattended: nextUnattended,
         _piPromptOverride: piPrompt,
+        _workflowSkillIdsOverride: requestedWorkflowSkillIds,
       });
     }
 
