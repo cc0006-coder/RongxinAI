@@ -26,7 +26,7 @@ function resolveCurrentEditionId(): string {
     }
   }
 
-  return 'zhiyuan';
+  return 'xiaoruan';
 }
 
 export function getBranding(editionId?: string): ProductBrandingConfig {
