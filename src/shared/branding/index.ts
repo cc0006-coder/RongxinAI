@@ -42,7 +42,6 @@ function resolveCurrentEditionId(): string {
       // Not running inside Electron main process
     }
   }
-
   return 'zhiyuan';
 }
 
