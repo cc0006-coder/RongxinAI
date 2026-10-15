@@ -492,11 +492,11 @@ const applyMessageTriageRouting = async (sessionId: string, prompt: string): Pro
   if (!config.enabled || !prompt.trim()) return;
 
   // The triage decision needs the message count and the session's model
-  // override, not the transcript: a metadata-only read plus a COUNT(*)
+  // override, not the transcript: one metadata read includes the count and
   // avoids materializing every message of a long session on each prompt.
   const store = getCoworkStore();
-  const messageCount = store.countSessionMessages(sessionId);
-  const session = store.getSession(sessionId, 0);
+  const session = store.getSession(sessionId, 0, { includeArtifacts: false });
+  const messageCount = session?.totalMessages ?? 0;
   const classifierBaseUrl = resolveTriageClassifierBaseUrl(config);
   const effectiveConfig: TriageConfig = {
     ...config,

@@ -1025,7 +1025,10 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
                 ...(attachedSkillIds?.length ? { skillIds: attachedSkillIds } : {}),
                 ...(expertIds.length
                   ? {
-                      experts: (this.store?.getSession(sessionId)?.experts ?? [])
+                      experts: (
+                        this.store?.getSession(sessionId, 0, { includeArtifacts: false })
+                          ?.experts ?? []
+                      )
                         .filter(expert => expertIds.includes(expert.expertId))
                         .map(expert => ({
                           expertId: expert.expertId,
@@ -1276,7 +1279,9 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
         customTools.push(
           buildPiScheduledTaskTool({
             service: this.scheduledTaskService,
-            workspaceId: this.store?.getSession(sessionId)?.workspaceId ?? null,
+            workspaceId:
+              this.store?.getSession(sessionId, 0, { includeArtifacts: false })?.workspaceId ??
+              null,
             sessionKey: sessionId,
           }),
         );
@@ -1515,7 +1520,9 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
         requestedModelOverride: options.modelOverride,
         requestedSkillIds: resourceState.skillIds,
         requestedExpertIds: expertIds,
-        turnExperts: (this.store?.getSession(sessionId)?.experts ?? [])
+        turnExperts: (
+          this.store?.getSession(sessionId, 0, { includeArtifacts: false })?.experts ?? []
+        )
           .filter(expert => expertIds.includes(expert.expertId))
           .map(expert => ({
             expertId: expert.expertId,
@@ -1724,7 +1731,7 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
       // instead of materializing the full history; the injected prompt is
       // identical because the selection rule only ever walks newest-first.
       // Metadata still comes from a zero-message read for mode/experts/cwd.
-      const storedSession = this.store?.getSession(sessionId, 0);
+      const storedSession = this.store?.getSession(sessionId, 0, { includeArtifacts: false });
       const chatMode =
         options.sessionMode === CoworkSessionMode.Chat ||
         storedSession?.mode === CoworkSessionMode.Chat;
@@ -1948,7 +1955,9 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
     active.errorSurfaced = false;
     active.retryNoticeEmitted = false;
     active.retryAttempts = 0;
-    active.turnExperts = (this.store?.getSession(sessionId)?.experts ?? [])
+    active.turnExperts = (
+      this.store?.getSession(sessionId, 0, { includeArtifacts: false })?.experts ?? []
+    )
       .filter(expert => active.requestedExpertIds.includes(expert.expertId))
       .map(expert => ({
         expertId: expert.expertId,
@@ -2241,10 +2250,9 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
     const store = this.store;
     if (!store || typeof store.getSessionMessagesDesc !== 'function') return;
 
-    // Open tool calls can only live in the current turn, so scan backward from
-    // the tail and stop at the most recent user message instead of reading the
-    // whole transcript. Iteration below stays oldest-first to keep the persist
-    // order identical to a full scan.
+    // Scan through the page containing the latest user message. Keep that
+    // whole boundary page so nearby orphan tool calls still receive terminal
+    // results, as in the previous full scan. Persist results oldest-first.
     const tailNewestFirst: CoworkMessage[] = [];
     const pageSize = 200;
     let offset = 0;
@@ -2615,7 +2623,10 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
 
   private isWorkSession(sessionId: string, active: ActivePiSession | undefined): boolean {
     if (active) return active.workbenchContract.kind !== WorkbenchContractKind.Chat;
-    return this.store?.getSession(sessionId)?.mode !== CoworkSessionMode.Chat;
+    return (
+      this.store?.getSession(sessionId, 0, { includeArtifacts: false })?.mode !==
+      CoworkSessionMode.Chat
+    );
   }
 
   private persistQueuedUserMessage(

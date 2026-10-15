@@ -25,6 +25,11 @@ import type {
 import type { Workspace } from '../shared/workspace';
 import { CoworkArtifactIndex } from './coworkArtifactIndex';
 import {
+  readCoworkSessionArtifacts,
+  readCoworkSessionMessages,
+  type CoworkSessionReadOptions,
+} from './coworkSessionRead';
+import {
   ensureDefaultConversationWorkspacePath,
   getDefaultConversationWorkspacePath,
   isDefaultConversationWorkspacePath,
@@ -941,6 +946,7 @@ export class CoworkStore {
   getSession(
     id: string,
     messageLimit: number | null = COWORK_MESSAGE_PAGE_SIZE,
+    options: CoworkSessionReadOptions = {},
   ): CoworkSession | null {
     interface SessionRow {
       id: string;
@@ -973,13 +979,12 @@ export class CoworkStore {
 
     if (!row) return null;
 
-    const totalMessages = this.countSessionMessages(id);
-    const resolvedMessageLimit = messageLimit === null ? totalMessages : Math.max(0, messageLimit);
-    const messageOffset = Math.max(0, totalMessages - resolvedMessageLimit);
-    const messages =
-      messageOffset > 0
-        ? this.getPagedSessionMessages(id, resolvedMessageLimit, messageOffset)
-        : this.getSessionMessages(id);
+    const { totalMessages, messageOffset, messages } = readCoworkSessionMessages(
+      this,
+      id,
+      messageLimit,
+      () => this.getSessionMessages(id),
+    );
 
     let activeSkillIds: string[] = [];
     if (row.active_skill_ids) {
@@ -1042,15 +1047,12 @@ export class CoworkStore {
       };
     });
 
-    let artifacts: CoworkPersistedArtifact[] = [];
-    try {
-      artifacts =
-        row.status === 'running'
-          ? this.artifactIndex.listSession(id)
-          : this.artifactIndex.refreshSession(id);
-    } catch (error) {
-      console.error(`[CoworkStore] Failed to index artifacts for session ${id}:`, error);
-    }
+    const artifacts = readCoworkSessionArtifacts(
+      this.artifactIndex,
+      id,
+      row.status as CoworkSessionStatus,
+      options,
+    );
 
     return {
       id: row.id,

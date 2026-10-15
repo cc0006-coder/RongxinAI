@@ -288,3 +288,19 @@ test('summarizePiHistoryFromStore never breaks a rebuild on a bad store', () => 
     ),
   ).toEqual({ messageCount: 2, contentBytes: 10, metadataBytes: 4 });
 });
+
+test('history read failures reject restoration instead of silently discarding context', () => {
+  const error = new Error('history read failed');
+  expect(() =>
+    restorePiConversationPrompt(
+      {
+        getSessionMessagesDesc: () => {
+          throw error;
+        },
+        getSessionMessageStats: () => ({ messageCount: 0, contentBytes: 0, metadataBytes: 0 }),
+      },
+      'session',
+      'Continue.',
+    ),
+  ).toThrow(error);
+});
