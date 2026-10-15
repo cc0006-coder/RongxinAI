@@ -4,9 +4,13 @@ import path from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { CoworkSessionMode } from '../../../shared/cowork/constants';
 import { AcademicResearchSkillIds, CoreSkillId } from '../../../shared/skills/constants';
-import { ModelCapabilityStatus } from '../../../shared/providers';
+import { ApiFormat, ModelCapabilityStatus, ProviderName } from '../../../shared/providers';
 import { PiRuntimeAdapter } from './piRuntimeAdapter';
 import { resolvePiTurnWorkflowSkills } from './piTurnWorkflow';
+import { PiAgentLoopToolName } from './piAgentLoop';
+import { PiResearchStateToolName } from './piResearchTypes';
+import { PiSkillScriptToolName } from './piSkillScriptTool';
+import { PiAgentEventType } from './piStreamConstants';
 
 const mocks = vi.hoisted(() => {
   const session = {
@@ -44,10 +48,10 @@ vi.mock('../claudeSettings', () => ({
       apiKey: 'test-key',
       baseURL: 'http://localhost:11434/v1',
       model: 'test-model',
-      apiType: 'openai',
+      apiType: ApiFormat.OpenAI,
     },
     providerMetadata: {
-      providerName: 'llamacpp',
+      providerName: ProviderName.LlamaCpp,
       capabilities: { toolCalling: ModelCapabilityStatus.Supported },
       contextWindow: 32768,
       maxTokens: 4096,
@@ -84,15 +88,15 @@ test.each([[...AcademicResearchSkillIds], [CoreSkillId.PresentationStudio]])(
     const options = mocks.create.mock.calls[0]?.[0] as {
       customTools: Array<{ name: string }>;
     };
-    expect(options.customTools.map(tool => tool.name)).not.toContain('research_state');
-    expect(options.customTools.map(tool => tool.name)).not.toContain('agent_loop');
-    expect(options.customTools.map(tool => tool.name)).toContain('run_skill_script');
+    expect(options.customTools.map(tool => tool.name)).not.toContain(PiResearchStateToolName);
+    expect(options.customTools.map(tool => tool.name)).not.toContain(PiAgentLoopToolName);
+    expect(options.customTools.map(tool => tool.name)).toContain(PiSkillScriptToolName);
     expect(mocks.session.prompt).toHaveBeenCalledWith('What was the previous task?');
     const listener = mocks.session.subscribe.mock.calls[0]?.[0] as (event: {
       type: string;
     }) => void;
-    listener({ type: 'agent_end' });
-    listener({ type: 'agent_settled' });
+    listener({ type: PiAgentEventType.AgentEnd });
+    listener({ type: PiAgentEventType.AgentSettled });
     await vi.waitFor(() => expect(adapter.isSessionRunning('session')).toBe(false));
     expect(mocks.session.prompt).toHaveBeenCalledTimes(1);
   },
@@ -113,7 +117,7 @@ test('clearing turn attachments on a live research session removes its completio
   const options = mocks.create.mock.calls[1]?.[0] as {
     customTools: Array<{ name: string }>;
   };
-  expect(options.customTools.map(tool => tool.name)).not.toContain('research_state');
+  expect(options.customTools.map(tool => tool.name)).not.toContain(PiResearchStateToolName);
   expect(mocks.session.prompt).toHaveBeenLastCalledWith('Just recall the previous task.');
 });
 
