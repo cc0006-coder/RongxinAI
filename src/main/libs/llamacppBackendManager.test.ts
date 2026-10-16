@@ -200,6 +200,7 @@ describe('llamacpp backend manager', () => {
       arch: 'x64',
       hasNvidiaGpu: true,
       config: {},
+      driverVersion: '580.42.01',
     });
 
     expect(ref?.versionBackend).toBe('b9505/win-x64-cuda-13');
@@ -237,6 +238,7 @@ describe('llamacpp backend manager', () => {
       arch: 'x64',
       hasNvidiaGpu: true,
       config: {},
+      driverVersion: '580.42.01',
     });
 
     expect(ref?.versionBackend).toBe('b9518/win-x64-cuda-13');

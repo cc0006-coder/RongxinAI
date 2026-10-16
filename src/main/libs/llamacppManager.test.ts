@@ -1090,6 +1090,39 @@ test('installModel keeps an interrupted partial file for a later Range resume', 
   expect(fs.existsSync(path.join(repoDir, 'mmproj-F16.gguf.download'))).toBe(true);
 });
 
+test('installModel falls back to hf-mirror when a ModelScope download URL returns 404', async () => {
+  const modelsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'local-model-install-hf-mirror-'));
+  const bytes = new Uint8Array([0x47, 0x47, 0x55, 0x46, 3, 0, 0, 0]);
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const modelScopeUrl =
+    'https://www.modelscope.cn/models/Qwen/Qwen3-8B-GGUF/resolve/commit-sha/Qwen3-8B-Q4_K_M.gguf';
+  const marketplaceService = {
+    resolveModel: async () =>
+      verifiedMarketplaceModel({
+        sha256,
+        downloadUrl: modelScopeUrl,
+      }),
+  } as MarketplaceService;
+  const manager = new LlamaCppManager(() => ({ modelsDir }), marketplaceService);
+  manager.refreshModelsAfterInstall = async () => undefined as any;
+  const fetchMock = vi.fn(async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url === modelScopeUrl) {
+      return new Response('not found', { status: 404 });
+    }
+    expect(url).toBe(
+      'https://hf-mirror.com/Qwen/Qwen3-8B-GGUF/resolve/commit-sha/Qwen3-8B-Q4_K_M.gguf',
+    );
+    return new Response(bytes, { status: 200, headers: { 'content-length': '8' } });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  const result = await manager.installModel({ modelId: 'Qwen/Qwen3-8B-GGUF' });
+
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(result.path).toContain('Qwen3-8B-Q4_K_M.gguf');
+});
+
 test('installModel refreshes cloud metadata once after a stale download URL returns 404', async () => {
   const modelsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'local-model-install-refresh-'));
   const bytes = new Uint8Array([0x47, 0x47, 0x55, 0x46, 3, 0, 0, 0]);
