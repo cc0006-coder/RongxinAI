@@ -10,13 +10,17 @@ import { usesBundledLlamaCppRuntime } from './inferenceEditionPolicy';
 
 export const LLAMACPP_BUNDLED_RUNTIME_DIR = 'llamacpp-bundled';
 
-type BundledRuntimeManifest = {
+export type BundledRuntimeManifest = {
   schemaVersion: number;
   backend: LlamaCppBackendRef;
   executable: string;
   sha256?: string;
+  vulkanExecutable?: string;
+  vulkanSha256?: string;
+  vulkanBackend?: LlamaCppBackendRef;
   cpuFallbackExecutable?: string;
   cpuFallbackSha256?: string;
+  cpuFallbackBackend?: LlamaCppBackendRef;
 };
 
 export function resolveBundledLlamaCppRuntimeRoot(): string {

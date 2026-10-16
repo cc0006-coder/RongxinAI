@@ -38,6 +38,12 @@ function main() {
     throw new Error(`Bundled runtime executable missing: ${manifest.executable}`);
   }
   manifest.sha256 = sha256File(executablePath);
+  if (manifest.vulkanExecutable) {
+    const vulkanPath = path.join(targetRoot, manifest.vulkanExecutable);
+    if (fs.existsSync(vulkanPath)) {
+      manifest.vulkanSha256 = sha256File(vulkanPath);
+    }
+  }
   if (manifest.cpuFallbackExecutable) {
     const fallbackPath = path.join(targetRoot, manifest.cpuFallbackExecutable);
     if (fs.existsSync(fallbackPath)) {

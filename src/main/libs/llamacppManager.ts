@@ -53,8 +53,12 @@ import {
 import {
   readBundledLlamaCppRuntimeManifest,
   resolveBundledLlamaCppExecutablePath,
-  tryResolveActiveBundledLlamaCppRuntime,
 } from './llamacppBundledRuntime';
+import {
+  isVulkanBackendStartupFailure,
+  resolveBundledEditionRuntime,
+  type ResolvedBundledRuntime,
+} from './llamacppBundledRuntimeSelection';
 import {
   primaryGpuSupportsCudaEdition,
   resolveCudaEditionGpuMessage,
@@ -162,6 +166,8 @@ export type LlamaCppModelsUnloadedForQuitEvent = {
 
 export class LlamaCppManager extends EventEmitter {
   private executablePath: string | null = null;
+  private bundledRuntimeSelection: ResolvedBundledRuntime | undefined;
+  private bundledStartupCpuFallbackAttempted = false;
   private process: ChildProcess | null = null;
   private runtimeContextLengthByModel = new Map<string, number>();
   private thinkingToggleSupportByModel = new Map<string, boolean>();
@@ -399,6 +405,35 @@ export class LlamaCppManager extends EventEmitter {
       this.waitUntilHealthy(this.getConnectionAndLoadTimeoutMs()),
       this.waitForStartupProcessExit(serviceProcess),
     ]);
+    if (
+      usesBundledLlamaCppRuntime() &&
+      !this.bundledStartupCpuFallbackAttempted &&
+      this.bundledRuntimeSelection?.accelerator === 'vulkan' &&
+      this.status.status === 'error'
+    ) {
+      const manifest = readBundledLlamaCppRuntimeManifest();
+      const startupError = this.status.error ?? this.startupStderr;
+      if (
+        manifest?.cpuFallbackExecutable &&
+        (isVulkanBackendStartupFailure(startupError) ||
+          /backend.*(?:unavailable|not available|failed)/i.test(startupError ?? ''))
+      ) {
+        this.bundledStartupCpuFallbackAttempted = true;
+        try {
+          const cpuResolved = await resolveBundledEditionRuntime({
+            manifest,
+            forceCpuPath: true,
+          });
+          this.bundledRuntimeSelection = cpuResolved;
+          this.executablePath = cpuResolved.executablePath;
+          syncCurrentBackend(getUserLlamaCppRuntimeRoot(), cpuResolved.backend);
+          console.warn('[LlamaCpp] Vulkan startup failed; falling back to bundled CPU runtime.');
+          return this.start();
+        } catch (error) {
+          console.warn('[LlamaCpp] Bundled CPU fallback failed:', error);
+        }
+      }
+    }
     return this.status;
   }
 
@@ -636,40 +671,34 @@ export class LlamaCppManager extends EventEmitter {
       }
     }
 
-    let executablePath: string | undefined;
+    let resolved: ResolvedBundledRuntime;
     try {
-      executablePath = resolveBundledLlamaCppExecutablePath(manifest, { preferCpuFallback });
+      resolved = await resolveBundledEditionRuntime({ manifest, preferCpuFallback });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.setStatus({ status: 'not-installed', managedByApp: true, error: message });
       return { success: false, plan: { kind: 'needs-manual', message }, error: message };
     }
-    if (!executablePath) {
-      const error = 'Bundled llama.cpp runtime executable is missing from this installation.';
-      this.setStatus({ status: 'not-installed', managedByApp: true, error });
-      return { success: false, plan: { kind: 'needs-manual', message: error }, error };
-    }
 
-    const bundled = tryResolveActiveBundledLlamaCppRuntime();
-    if (bundled?.backend) {
-      syncCurrentBackend(runtimeRoot, bundled.backend);
-    }
-    this.executablePath = executablePath;
+    this.bundledRuntimeSelection = resolved;
+    this.bundledStartupCpuFallbackAttempted = false;
+    syncCurrentBackend(runtimeRoot, resolved.backend);
+    this.executablePath = resolved.executablePath;
     this.setStatus({
       status: 'installed',
-      executablePath,
+      executablePath: resolved.executablePath,
       managedByApp: true,
     });
     this.emit('install-progress', {
       phase: 'done',
       modelId: LLAMACPP_RUNTIME_PROGRESS_KEY,
-      modelName: bundled?.backend.versionBackend ?? 'bundled',
+      modelName: resolved.backend.versionBackend,
       percent: 100,
     } satisfies LlamaCppInstallProgress);
     return {
       success: true,
-      plan: { kind: 'ready', executablePath },
-      executablePath,
+      plan: { kind: 'ready', executablePath: resolved.executablePath },
+      executablePath: resolved.executablePath,
       ...(installWarning ? { warning: installWarning } : {}),
     };
   }

@@ -153,12 +153,16 @@ async function main() {
 
     const cpuFallbackRoot = path.join(CUDA_EDITION_ROOT, 'cpu-fallback');
     fs.rmSync(cpuFallbackRoot, { recursive: true, force: true });
-    copyDirectoryContents(path.join(CPU_EDITION_ROOT, 'bin'), cpuFallbackRoot);
+    const releaseTag = resolveRuntimeReleaseTag(ROOT);
+    const cpuBackendDir = path.join(CPU_EDITION_ROOT, 'backends', releaseTag, hostTargetId, 'bin');
+    const cpuBinSource = fs.existsSync(cpuBackendDir)
+      ? cpuBackendDir
+      : path.join(CPU_EDITION_ROOT, 'bin');
+    copyDirectoryContents(cpuBinSource, cpuFallbackRoot);
 
     const cpuFallbackExecutable = path
       .join('cpu-fallback', executableName)
       .replace(/\\/g, '/');
-    const releaseTag = resolveRuntimeReleaseTag(ROOT);
     const manifest = {
       schemaVersion: 1,
       backend: {
