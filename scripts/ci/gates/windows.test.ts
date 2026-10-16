@@ -65,10 +65,9 @@ test('PRs restore without saving; verified main runs publish the same cache grap
   expect(install?.if).toBeUndefined();
 });
 
-test.each([
-  ['release-candidate.yml', 'build-candidate', 'Assemble Windows candidate payload'],
-  ['online-update-release.yml', 'build-platforms', 'Upload Windows immutable artifact to R2'],
-])('compression qualification blocks the publication path in %s', (file, job, publishName) => {
+test.each([['release.yml', 'build-release', 'Assemble Windows release payload']])(
+  'compression qualification blocks the publication path in %s',
+  (file, job, publishName) => {
   const releaseSteps = workflow(file).jobs[job].steps;
   const index = releaseSteps.findIndex(step => step.uses === compressionAction);
   expect(index).toBeGreaterThan(-1);

@@ -885,6 +885,9 @@ contextBridge.exposeInMainWorld('electron', {
   },
 
   appUpdate: {
+    getChannel: () => ipcRenderer.invoke(AppUpdateIpc.GetChannel),
+    setChannel: (channel: 'stable' | 'beta') =>
+      ipcRenderer.invoke(AppUpdateIpc.SetChannel, channel),
     getState: () => ipcRenderer.invoke(AppUpdateIpc.GetState),
     checkNow: (options?: { manual?: boolean; userId?: string | null }) =>
       ipcRenderer.invoke(AppUpdateIpc.CheckNow, options),

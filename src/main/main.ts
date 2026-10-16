@@ -59,6 +59,7 @@ import {
   APP_UPDATE_POLL_INTERVAL_MS,
   APP_UPDATE_STARTUP_DELAY_JITTER_MS,
   APP_UPDATE_STARTUP_DELAY_MIN_MS,
+  AppUpdateChannelPreference,
   AppUpdateIpc,
   AppUpdateStatus,
 } from '../shared/appUpdate/constants';
@@ -7281,6 +7282,21 @@ if (!gotTheLock) {
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
+  });
+
+  ipcMain.handle(AppUpdateIpc.GetChannel, async () => {
+    return getAppUpdateCoordinator().getChannelPreference();
+  });
+
+  ipcMain.handle(AppUpdateIpc.SetChannel, async (_event, channel: unknown) => {
+    if (
+      channel !== AppUpdateChannelPreference.Stable &&
+      channel !== AppUpdateChannelPreference.Beta
+    ) {
+      throw new Error('Invalid update channel preference');
+    }
+    getAppUpdateCoordinator().setChannelPreference(channel);
+    return getAppUpdateCoordinator().getChannelPreference();
   });
 
   ipcMain.handle(AppUpdateIpc.GetState, async () => {

@@ -3,6 +3,14 @@ import type { BrowserMockRuntime } from '../runtime';
 
 export function createAppUpdate(runtime: BrowserMockRuntime): Window['electron']['appUpdate'] {
   return {
+    getChannel: async () => {
+      runtime.warnOnce('appUpdate.getChannel');
+      return 'stable';
+    },
+    setChannel: async channel => {
+      runtime.warnOnce('appUpdate.setChannel');
+      return channel;
+    },
     getState: async () => {
       runtime.warnOnce('appUpdate.getState');
       return {

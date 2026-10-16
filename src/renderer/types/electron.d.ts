@@ -1300,6 +1300,8 @@ interface IElectronAPI {
     relaunch: () => Promise<void>;
   };
   appUpdate: {
+    getChannel: () => Promise<'stable' | 'beta'>;
+    setChannel: (channel: 'stable' | 'beta') => Promise<'stable' | 'beta'>;
     getState: () => Promise<AppUpdateRuntimeState>;
     checkNow: (options?: {
       manual?: boolean;

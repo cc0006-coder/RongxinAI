@@ -12,6 +12,7 @@ import { gt, lt, valid } from 'semver';
 
 import {
   type AppUpdateCheckResult,
+  AppUpdateChannelPreference,
   AppUpdateFailureStage,
   type AppUpdateInfo,
   AppUpdateInstallOutcome,
@@ -26,11 +27,18 @@ import type { SqliteStore } from '../sqliteStore';
 import { installWindowsNsis } from './appUpdateInstaller';
 import { sha512UpdateFile } from './appUpdateFileHasher';
 import { readInstallResult } from './appUpdateInstallReceipt';
-import { isSha512, toUpdateInfo, type UpdatePayload, type UpdateTarget } from './appUpdateManifest';
+import {
+  AppUpdateReleaseChannel,
+  isSha512,
+  toUpdateInfo,
+  type UpdatePayload,
+  type UpdateTarget,
+} from './appUpdateManifest';
 
 const UPDATE_ENDPOINT = 'https://updates.rongxzyai.com/v1/updates/latest';
 const ELECTRON_UPDATE_FEED_BASE = 'https://updates.rongxzyai.com/v2/electron';
 const MANIFEST_CACHE_KEY_PREFIX = 'app_update_manifest_cache';
+const APP_UPDATE_CHANNEL_STORE_KEY = 'app_update_channel';
 const READY_UPDATE_CACHE_KEY = 'app_update_ready_v2';
 const SUPPORTED_UPDATE_PLATFORMS = new Set(['win32', 'darwin', 'linux']);
 const SUPPORTED_UPDATE_ARCHITECTURES = new Set(['x64', 'arm64']);
@@ -697,12 +705,54 @@ export class AppUpdateCoordinator {
     });
   }
 
+  getChannelPreference(): AppUpdateReleaseChannel {
+    const stored = this.store.get<string>(APP_UPDATE_CHANNEL_STORE_KEY);
+    return stored === AppUpdateChannelPreference.Beta
+      ? AppUpdateReleaseChannel.Beta
+      : AppUpdateReleaseChannel.Stable;
+  }
+
+  setChannelPreference(channel: AppUpdateChannelPreference): void {
+    if (
+      channel !== AppUpdateChannelPreference.Stable &&
+      channel !== AppUpdateChannelPreference.Beta
+    ) {
+      throw new Error('Unsupported update channel preference');
+    }
+    const releaseChannel =
+      channel === AppUpdateChannelPreference.Beta
+        ? AppUpdateReleaseChannel.Beta
+        : AppUpdateReleaseChannel.Stable;
+    this.store.set(APP_UPDATE_CHANNEL_STORE_KEY, releaseChannel);
+    this.clearTransientUpdateState();
+  }
+
+  private resolveReleaseChannel(): AppUpdateReleaseChannel {
+    return this.getChannelPreference();
+  }
+
+  private manifestCacheKey(target: UpdateTarget): string {
+    const channel = this.resolveReleaseChannel();
+    const { platform, arch, variant } = target;
+    return `${MANIFEST_CACHE_KEY_PREFIX}:${channel}:${platform}:${arch}:${variant}`;
+  }
+
   private configureUpdater(target: UpdateTarget): void {
+    const channel = this.resolveReleaseChannel();
     const feedUrl = new URL(
       `${target.platform}/${target.arch}/${target.variant}/`,
-      `${ELECTRON_UPDATE_FEED_BASE}/stable/`,
+      `${ELECTRON_UPDATE_FEED_BASE}/${channel}/`,
     );
     this.updater.setFeedURL({ provider: 'generic', url: feedUrl.toString() });
+  }
+
+  private clearTransientUpdateState(): void {
+    this.downloadCancellation?.cancel();
+    this.downloadCancellation = null;
+    this.currentSignedEnvelope = null;
+    this.downloadedFilePath = null;
+    this.pendingReadyUpdate = null;
+    this.setState(initialState());
   }
 
   private assertUpdaterMatchesSignedManifest(updateInfo: UpdateInfo, info: AppUpdateInfo): void {
@@ -755,6 +805,7 @@ export class AppUpdateCoordinator {
             this.verifyAndDecodeManifest(ready.envelope),
             target,
             this.isElectronUpdaterEnabled(target),
+            this.resolveReleaseChannel(),
           )
         : null;
       if (!info || ready.sha512 !== info.expectedUpdaterSha512)
@@ -793,10 +844,11 @@ export class AppUpdateCoordinator {
     const target = this.resolveUpdateTarget();
     if (!target) return null;
     const { platform, arch, variant } = target;
-    const cacheKey = `${MANIFEST_CACHE_KEY_PREFIX}:${platform}:${arch}:${variant}`;
+    const channel = this.resolveReleaseChannel();
+    const cacheKey = this.manifestCacheKey(target);
     const cachedManifest = this.readCachedManifest(cacheKey);
     const url = new URL(UPDATE_ENDPOINT);
-    url.searchParams.set('channel', 'stable');
+    url.searchParams.set('channel', channel);
     url.searchParams.set('platform', platform);
     url.searchParams.set('arch', arch);
     url.searchParams.set('variant', variant);
@@ -821,7 +873,12 @@ export class AppUpdateCoordinator {
     const envelope: unknown =
       response.status === 304 ? cachedManifest?.envelope : await response.json();
     const payload = this.verifyAndDecodeManifest(envelope);
-    const info = toUpdateInfo(payload, target, this.isElectronUpdaterEnabled(target));
+    const info = toUpdateInfo(
+      payload,
+      target,
+      this.isElectronUpdaterEnabled(target),
+      channel,
+    );
     if (response.status !== 304) {
       const receivedEtag = response.headers.get('etag');
       if (receivedEtag)

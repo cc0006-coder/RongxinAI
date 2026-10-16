@@ -23,12 +23,7 @@ function read(filename: string): string {
 }
 
 test('Windows packaging does not require runtime signature verification or public signer configuration', () => {
-  for (const filename of [
-    'build-platforms.yml',
-    'windows-installer-pr.yml',
-    'release-candidate.yml',
-    'online-update-release.yml',
-  ]) {
+  for (const filename of ['windows-installer-pr.yml', 'release.yml']) {
     const file = `.github/workflows/${filename}`;
     if (!existsSync(path.join(root, file))) continue;
     expect(read(file)).not.toMatch(/verify-windows-runtime-signatures|RUNTIME_SIGNER_THUMBPRINT/);
