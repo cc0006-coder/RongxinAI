@@ -876,6 +876,8 @@ contextBridge.exposeInMainWorld('electron', {
 
   appInfo: {
     getVersion: () => ipcRenderer.invoke(AppIpc.GetVersion),
+    getInferenceEdition: () => ipcRenderer.invoke(AppIpc.GetInferenceEdition),
+    usesBundledLlamaCppRuntime: () => ipcRenderer.invoke(AppIpc.UsesBundledLlamaCppRuntime),
     isDev: () => ipcRenderer.invoke(AppIpc.IsDev),
     isEnterprise: () => ipcRenderer.invoke(AppIpc.IsEnterprise),
     getSystemLocale: () => ipcRenderer.invoke(AppIpc.GetSystemLocale),

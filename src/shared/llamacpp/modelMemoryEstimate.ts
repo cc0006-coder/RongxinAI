@@ -12,6 +12,8 @@ export type LlamaCppModelMemoryEstimateInput = {
   contextSize?: number;
   cacheTypeK?: string;
   cacheTypeV?: string;
+  /** When set, overrides heuristic KV/token (e.g. from GGUF metadata). */
+  kvBytesPerToken?: number;
   /** Weight fraction likely resident on GPU when gpu-layers is auto (0–1). */
   gpuWeightFraction?: number;
 };
@@ -34,11 +36,14 @@ export function estimateLlamaCppModelMemory(
 
   const modelSizeMiB = input.modelSizeBytes / LLAMACPP_MEMORY_ESTIMATE_MIB;
   const contextTokens = Math.max(0, input.contextSize ?? 0);
-  const kvBytesPerToken = estimateLlamaCppKvBytesPerToken({
-    modelSizeBytes: input.modelSizeBytes,
-    cacheTypeK: input.cacheTypeK,
-    cacheTypeV: input.cacheTypeV,
-  });
+  const kvBytesPerToken =
+    input.kvBytesPerToken && input.kvBytesPerToken > 0
+      ? input.kvBytesPerToken
+      : estimateLlamaCppKvBytesPerToken({
+          modelSizeBytes: input.modelSizeBytes,
+          cacheTypeK: input.cacheTypeK,
+          cacheTypeV: input.cacheTypeV,
+        });
   const kvCacheMiB = (contextTokens * kvBytesPerToken) / LLAMACPP_MEMORY_ESTIMATE_MIB;
   const runtimeBufferMiB = Math.max(128, Math.round(modelSizeMiB * 0.03 + contextTokens / 512));
   const gpuWeightFraction = clampFraction(input.gpuWeightFraction ?? 0.82);

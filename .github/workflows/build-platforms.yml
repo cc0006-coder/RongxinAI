@@ -41,18 +41,26 @@ jobs:
           matrix='{"include":['
           separator=''
 
-          if [[ "$BUILD_MACOS" == "true" ]]; then
-            matrix+='{"platform":"macos","runner":"macos-latest","artifact":"macos-arm64-build","runtime_target":"mac-arm64","arch":"arm64"}'
-            separator=','
-            matrix+="${separator}{\"platform\":\"macos\",\"runner\":\"macos-15-intel\",\"artifact\":\"macos-x64-build\",\"runtime_target\":\"mac-x64\",\"arch\":\"x64\"}"
-            separator=','
-          fi
           if [[ "$BUILD_WINDOWS" == "true" ]]; then
-            matrix+="${separator}{\"platform\":\"windows\",\"runner\":\"windows-latest\",\"artifact\":\"windows-build\",\"runtime_target\":\"win-x64\"}"
-            separator=','
+            for edition in lite cpu cuda; do
+              matrix+="${separator}{\"platform\":\"windows\",\"runner\":\"windows-latest\",\"artifact\":\"windows-${edition}-build\",\"runtime_target\":\"win-x64\",\"inference_edition\":\"${edition}\"}"
+              separator=','
+            done
           fi
           if [[ "$BUILD_LINUX" == "true" ]]; then
-            matrix+="${separator}{\"platform\":\"linux\",\"runner\":\"ubuntu-latest\",\"artifact\":\"linux-build\",\"runtime_target\":\"linux-x64\"}"
+            for edition in lite cpu cuda; do
+              matrix+="${separator}{\"platform\":\"linux\",\"runner\":\"ubuntu-latest\",\"artifact\":\"linux-${edition}-build\",\"runtime_target\":\"linux-x64\",\"inference_edition\":\"${edition}\"}"
+              separator=','
+            done
+          fi
+          if [[ "$BUILD_MACOS" == "true" ]]; then
+            matrix+="${separator}{\"platform\":\"macos\",\"runner\":\"macos-latest\",\"artifact\":\"macos-arm64-cpu-build\",\"runtime_target\":\"mac-arm64\",\"arch\":\"arm64\",\"inference_edition\":\"cpu\"}"
+            separator=','
+            matrix+="${separator}{\"platform\":\"macos\",\"runner\":\"macos-15-intel\",\"artifact\":\"macos-x64-cpu-build\",\"runtime_target\":\"mac-x64\",\"arch\":\"x64\",\"inference_edition\":\"cpu\"}"
+            separator=','
+            matrix+="${separator}{\"platform\":\"macos\",\"runner\":\"macos-latest\",\"artifact\":\"macos-arm64-lite-build\",\"runtime_target\":\"mac-arm64\",\"arch\":\"arm64\",\"inference_edition\":\"lite\"}"
+            separator=','
+            matrix+="${separator}{\"platform\":\"macos\",\"runner\":\"macos-15-intel\",\"artifact\":\"macos-x64-lite-build\",\"runtime_target\":\"mac-x64\",\"arch\":\"x64\",\"inference_edition\":\"lite\"}"
           fi
 
           matrix+=']}'
@@ -126,6 +134,14 @@ jobs:
           bun run setup:posix-uv-runtime
           bun run setup:posix-python-runtime
           bun run engram:runtime:${{ matrix.runtime_target }}
+      - name: Build RTX 40 CUDA llama.cpp runtime
+        if: ${{ matrix.inference_edition == 'cuda' && matrix.platform != 'macos' }}
+        run: bash scripts/build-llamacpp-cuda-rtx40.sh ${{ matrix.platform == 'windows' && 'win' || 'linux' }}
+      - name: Stage bundled llama.cpp runtime
+        if: ${{ matrix.inference_edition != 'lite' }}
+        run: bun run prepare:inference-edition-runtime
+        env:
+          ZHIYUAN_UPDATE_VARIANT: ${{ matrix.inference_edition }}
       - name: Build macOS
         if: ${{ matrix.platform == 'macos' }}
         run: bun run dist:mac:${{ matrix.arch }}
@@ -133,19 +149,22 @@ jobs:
           NODE_OPTIONS: '--max-old-space-size=4096'
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           MODELSCOPE_TOKENS: ${{ secrets.MODELSCOPE_TOKENS }}
+          ZHIYUAN_UPDATE_VARIANT: ${{ matrix.inference_edition }}
       - name: Build Windows
         if: ${{ matrix.platform == 'windows' }}
-        run: bun run dist:win
+        run: bun run dist:win:${{ matrix.inference_edition }}
         env:
           NODE_OPTIONS: '--max-old-space-size=4096'
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           MODELSCOPE_TOKENS: ${{ secrets.MODELSCOPE_TOKENS }}
+          ZHIYUAN_UPDATE_VARIANT: ${{ matrix.inference_edition }}
       - name: Build Linux
         if: ${{ matrix.platform == 'linux' }}
         run: bun run dist:linux
         env:
           NODE_OPTIONS: '--max-old-space-size=4096'
           MODELSCOPE_TOKENS: ${{ secrets.MODELSCOPE_TOKENS }}
+          ZHIYUAN_UPDATE_VARIANT: ${{ matrix.inference_edition }}
       - name: Verify packaged ACP registry and bridges
         run: node scripts/ci/verify-packaged-acp-resources.mjs
       - name: Verify Windows package runtimes with a clean PATH

@@ -50,6 +50,20 @@ import {
   prepareLlamaCppBackendVersionSwitch,
   restartLlamaCppBackendVersionService,
 } from './llamacppBackendVersionSwitch';
+import {
+  readBundledLlamaCppRuntimeManifest,
+  resolveBundledLlamaCppExecutablePath,
+  tryResolveActiveBundledLlamaCppRuntime,
+} from './llamacppBundledRuntime';
+import {
+  primaryGpuSupportsCudaEdition,
+  resolveCudaEditionGpuMessage,
+  shouldEnforceCudaEditionGpuPolicy,
+} from './llamacppCudaEditionPolicy';
+import {
+  isLocalInferenceFeatureEnabled,
+  usesBundledLlamaCppRuntime,
+} from './inferenceEditionPolicy';
 import { LlamaCppClient } from './llamacppClient';
 import { isPathInside, mergeLocalModels, scanLocalGgufModels } from './llamacppModelCatalog';
 import {
@@ -391,6 +405,11 @@ export class LlamaCppManager extends EventEmitter {
   async installRuntime(
     options: { signal?: AbortSignal } = {},
   ): Promise<LlamaCppRuntimeInstallResult> {
+    if (!isLocalInferenceFeatureEnabled()) {
+      const error = 'Local inference is not included in this edition.';
+      this.setStatus({ status: 'not-installed', managedByApp: false, error });
+      return { success: false, plan: { kind: 'needs-manual', message: error }, error };
+    }
     this.clearBackendListCache();
     this.emit('install-progress', {
       phase: 'starting',
@@ -398,6 +417,9 @@ export class LlamaCppManager extends EventEmitter {
       modelName: 'llama.cpp runtime',
     } satisfies LlamaCppInstallProgress);
     const config = this.getServiceConfig();
+    if (usesBundledLlamaCppRuntime()) {
+      return await this.installBundledRuntime(options);
+    }
     const externalExecutablePath = await findExternalLlamaCppExecutable(config);
     if (externalExecutablePath) {
       const plan = createLlamaCppRuntimeInstallPlan({
@@ -588,6 +610,68 @@ export class LlamaCppManager extends EventEmitter {
       } satisfies LlamaCppInstallProgress);
     }
     return installWarning && result.success ? { ...result, warning: installWarning } : result;
+  }
+
+  private async installBundledRuntime(
+    options: { signal?: AbortSignal } = {},
+  ): Promise<LlamaCppRuntimeInstallResult> {
+    void options;
+    const runtimeRoot = getUserLlamaCppRuntimeRoot();
+    const nvidiaSnapshot = await getLlamaCppNvidiaSnapshot();
+    const manifest = readBundledLlamaCppRuntimeManifest();
+    if (!manifest) {
+      const error = 'Bundled llama.cpp runtime manifest is missing from this installation.';
+      this.setStatus({ status: 'not-installed', managedByApp: true, error });
+      return { success: false, plan: { kind: 'needs-manual', message: error }, error };
+    }
+
+    let preferCpuFallback = false;
+    let installWarning: string | undefined;
+    if (shouldEnforceCudaEditionGpuPolicy() && !primaryGpuSupportsCudaEdition(nvidiaSnapshot)) {
+      installWarning = resolveCudaEditionGpuMessage(nvidiaSnapshot);
+      preferCpuFallback = Boolean(manifest.cpuFallbackExecutable);
+      if (!preferCpuFallback) {
+        this.setStatus({ status: 'not-installed', managedByApp: true, error: installWarning });
+        return { success: false, plan: { kind: 'needs-manual', message: installWarning }, error: installWarning };
+      }
+    }
+
+    let executablePath: string | undefined;
+    try {
+      executablePath = resolveBundledLlamaCppExecutablePath(manifest, { preferCpuFallback });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.setStatus({ status: 'not-installed', managedByApp: true, error: message });
+      return { success: false, plan: { kind: 'needs-manual', message }, error: message };
+    }
+    if (!executablePath) {
+      const error = 'Bundled llama.cpp runtime executable is missing from this installation.';
+      this.setStatus({ status: 'not-installed', managedByApp: true, error });
+      return { success: false, plan: { kind: 'needs-manual', message: error }, error };
+    }
+
+    const bundled = tryResolveActiveBundledLlamaCppRuntime();
+    if (bundled?.backend) {
+      syncCurrentBackend(runtimeRoot, bundled.backend);
+    }
+    this.executablePath = executablePath;
+    this.setStatus({
+      status: 'installed',
+      executablePath,
+      managedByApp: true,
+    });
+    this.emit('install-progress', {
+      phase: 'done',
+      modelId: LLAMACPP_RUNTIME_PROGRESS_KEY,
+      modelName: bundled?.backend.versionBackend ?? 'bundled',
+      percent: 100,
+    } satisfies LlamaCppInstallProgress);
+    return {
+      success: true,
+      plan: { kind: 'ready', executablePath },
+      executablePath,
+      ...(installWarning ? { warning: installWarning } : {}),
+    };
   }
 
   async listBackends(): Promise<LlamaCppBackendListResult> {

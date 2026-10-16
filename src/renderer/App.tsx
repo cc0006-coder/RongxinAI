@@ -11,6 +11,11 @@ import {
 } from '../shared/managedProviders';
 import { getBranding } from '../shared/branding';
 import {
+  InferenceEdition,
+  isLocalInferenceEnabledForEdition,
+  normalizeInferenceEdition,
+} from '../shared/inferenceEdition';
+import {
   hasAskUserQuestions,
   isAskUserQuestionPermission,
 } from './components/cowork/askUserQuestion';
@@ -181,6 +186,13 @@ const App: React.FC = () => {
   );
   const isWindows = window.electron.platform === 'win32';
   const managedModelsOnly = managedProviderPolicy?.mode === ManagedProviderAccessMode.Exclusive;
+  const [inferenceEdition, setInferenceEdition] = useState<InferenceEdition>(InferenceEdition.Lite);
+  useEffect(() => {
+    void window.electron.appInfo
+      .getInferenceEdition()
+      .then(value => setInferenceEdition(normalizeInferenceEdition(value)));
+  }, []);
+  const localInferenceEnabled = isLocalInferenceEnabledForEdition(inferenceEdition);
 
   const waitWithTimeout = useCallback(
     async <T,>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
@@ -390,7 +402,7 @@ const App: React.FC = () => {
   }, [mainView, hasMountedLocalInference, LOCAL_INFERENCE_KEEP_ALIVE_IDLE_MS]);
 
   useEffect(() => {
-    if (!managedProviderPolicy || managedModelsOnly) return;
+    if (!managedProviderPolicy || managedModelsOnly || !localInferenceEnabled) return;
     let active = true;
     void window.electron.appInfo
       .consumePendingLocalInferenceInstall()
@@ -470,7 +482,7 @@ const App: React.FC = () => {
   }, []);
 
   const handleShowLocalInference = useCallback(() => {
-    if (managedModelsOnly) return;
+    if (managedModelsOnly || !localInferenceEnabled) return;
     setLocalInferenceRefreshRequestId(current => current + 1);
     setMainView('localInference');
   }, [managedModelsOnly]);
@@ -744,7 +756,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const handler = () => {
-      if (managedModelsOnly) return;
+      if (managedModelsOnly || !localInferenceEnabled) return;
       setMainView('localInference');
     };
     window.addEventListener('app:show-local-inference', handler);
@@ -813,6 +825,7 @@ const App: React.FC = () => {
                   enterpriseConfig={enterpriseConfig}
                   appUpdateState={appUpdateState}
                   managedModelsOnly={managedModelsOnly}
+            inferenceEdition={inferenceEdition}
                 />
               </React.Suspense>
             </LazyChunkErrorBoundary>
@@ -870,6 +883,7 @@ const App: React.FC = () => {
             updateEntry={!isSidebarCollapsed ? updateEntry : null}
             hideLogin={Boolean(enterpriseConfig) || !getBranding().features.enableCommunityAuth}
             managedModelsOnly={managedModelsOnly}
+            inferenceEdition={inferenceEdition}
             onPrefetchView={prefetchFeatureView}
           />
           <div
@@ -879,7 +893,10 @@ const App: React.FC = () => {
               data-main-canvas
               className="relative h-full min-h-0 rounded-xl bg-background overflow-hidden contain-[layout_style_paint]"
             >
-              {hasMountedLocalInference && !isLocalInferenceDormant && !managedModelsOnly && (
+              {hasMountedLocalInference &&
+                !isLocalInferenceDormant &&
+                localInferenceEnabled &&
+                !managedModelsOnly && (
                 <div
                   className={
                     mainView === 'localInference' ? 'h-full min-h-0' : 'hidden h-full min-h-0'
@@ -914,6 +931,7 @@ const App: React.FC = () => {
                       enterpriseConfig={enterpriseConfig}
                       appUpdateState={appUpdateState}
                       managedModelsOnly={managedModelsOnly}
+            inferenceEdition={inferenceEdition}
                       isSidebarCollapsed={isSidebarCollapsed}
                       onToggleSidebar={handleToggleSidebar}
                       onNewChat={handleNewChat}

@@ -1,3 +1,5 @@
+import fs from 'fs';
+
 import type { NvidiaSmiSnapshot, SystemMemorySnapshot } from '../../shared/hardware';
 import {
   estimateRequiredLlamaCppModelVramMiB,
@@ -10,6 +12,7 @@ import {
   LlamaCppModelLoadFailureReason,
   type LlamaCppModelLoadFailureReason as LlamaCppModelLoadFailureReasonType,
 } from './llamacppModelLoadErrors';
+import { readGgufKvBytesPerToken } from './ggufMetadata';
 import { resolveLlamaCppDeviceSelection } from './llamacppServe';
 
 export const LlamaCppModelGpuPlacementMode = {
@@ -116,12 +119,9 @@ function validateManualMemoryBudget(
   const budgetMiB = Math.floor(systemMemory.totalMemoryMiB * (budgetPercent / 100));
   const availableSystemMemoryMiB = Math.min(budgetMiB, systemMemory.freeMemoryMiB);
   const availableMemoryMiB = availableSystemMemoryMiB + sumAvailableVramMiB(input.nvidiaSnapshot);
-  const requiredMemoryMiB = estimateRequiredLlamaCppModelVramMiB({
-    modelSizeBytes: input.modelSizeBytes,
-    contextSize: input.launchInput.options?.ctxSize,
-    cacheTypeK: input.cacheTypeK,
-    cacheTypeV: input.cacheTypeV,
-  });
+  const requiredMemoryMiB = estimateRequiredLlamaCppModelVramMiB(
+    buildMemoryEstimateInput(input),
+  );
   if (requiredMemoryMiB <= availableMemoryMiB) return null;
 
   return {
@@ -131,6 +131,21 @@ function validateManualMemoryBudget(
       'The model startup estimate exceeds the configured system-memory budget plus free VRAM.',
     requiredMemoryMiB,
     availableMemoryMiB,
+  };
+}
+
+function buildMemoryEstimateInput(input: LlamaCppModelGpuPlacementInput) {
+  const modelPath = input.launchInput.modelPath;
+  const kvBytesPerToken =
+    modelPath && fs.existsSync(modelPath)
+      ? readGgufKvBytesPerToken(modelPath, input.cacheTypeK, input.cacheTypeV)
+      : undefined;
+  return {
+    modelSizeBytes: input.modelSizeBytes,
+    contextSize: input.launchInput.options?.ctxSize,
+    cacheTypeK: input.cacheTypeK,
+    cacheTypeV: input.cacheTypeV,
+    ...(kvBytesPerToken ? { kvBytesPerToken } : {}),
   };
 }
 
@@ -196,12 +211,9 @@ function selectGpuIndexes(input: LlamaCppModelGpuPlacementInput): number[] {
   const candidates = (input.nvidiaSnapshot?.gpus ?? [])
     .filter(gpu => Number.isFinite(gpu.memoryFreeMiB) && (gpu.memoryFreeMiB ?? -1) >= 0)
     .sort((left, right) => (right.memoryFreeMiB ?? 0) - (left.memoryFreeMiB ?? 0));
-  const requiredMemoryMiB = estimateRequiredLlamaCppModelVramMiB({
-    modelSizeBytes: input.modelSizeBytes,
-    contextSize: input.launchInput.options?.ctxSize,
-    cacheTypeK: input.cacheTypeK,
-    cacheTypeV: input.cacheTypeV,
-  });
+  const requiredMemoryMiB = estimateRequiredLlamaCppModelVramMiB(
+    buildMemoryEstimateInput(input),
+  );
   const selected: number[] = [];
   let availableMemoryMiB = 0;
 

@@ -1293,6 +1293,8 @@ interface IElectronAPI {
   };
   appInfo: {
     getVersion: () => Promise<string>;
+    getInferenceEdition: () => Promise<string>;
+    usesBundledLlamaCppRuntime: () => Promise<boolean>;
     isDev: () => Promise<boolean>;
     isEnterprise: () => Promise<boolean>;
     getSystemLocale: () => Promise<string>;

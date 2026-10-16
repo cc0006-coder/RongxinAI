@@ -422,9 +422,60 @@ function installSkillDependencies() {
   );
 }
 
+function configureInferenceEditionResources(context) {
+  const edition = (process.env.ZHIYUAN_UPDATE_VARIANT || 'lite').trim().toLowerCase();
+  const extraResources = Array.isArray(context.packager.config.extraResources)
+    ? [...context.packager.config.extraResources]
+    : [];
+
+  const withoutLegacyBackends = extraResources.filter(entry => {
+    const target = typeof entry === 'string' ? entry : entry?.to;
+    return target !== 'llamacpp-backends';
+  });
+
+  if (edition === 'lite') {
+    context.packager.config.extraResources = withoutLegacyBackends.filter(entry => {
+      const target = typeof entry === 'string' ? entry : entry?.to;
+      return target !== 'llamacpp-bundled';
+    });
+    console.log('[electron-builder-hooks] lite edition: omit bundled llama.cpp runtime.');
+    return;
+  }
+
+  const prepare = spawnSync(process.execPath, ['scripts/prepare-inference-edition-runtime.cjs'], {
+    cwd: path.join(__dirname, '..'),
+    env: process.env,
+    stdio: 'inherit',
+  });
+  if (prepare.status !== 0) {
+    throw new Error(
+      `[electron-builder-hooks] Failed to stage bundled llama.cpp runtime for edition ${edition}.`,
+    );
+  }
+
+  const hasBundled = withoutLegacyBackends.some(entry => {
+    const target = typeof entry === 'string' ? entry : entry?.to;
+    return target === 'llamacpp-bundled';
+  });
+  context.packager.config.extraResources = hasBundled
+    ? withoutLegacyBackends
+    : [
+        ...withoutLegacyBackends,
+        {
+          from: 'resources/llamacpp-bundled',
+          to: 'llamacpp-bundled',
+          filter: ['**/*'],
+        },
+      ];
+  console.log(
+    `[electron-builder-hooks] inference edition ${edition}: bundled llama.cpp runtime enabled.`,
+  );
+}
+
 async function beforePack(context) {
   configureMagpieResources(context);
   configureMacAutoUpdateMetadata(context);
+  configureInferenceEditionResources(context);
   ensureBundledChannelRuntime(context);
   // Install skill dependencies first (for all platforms)
   installSkillDependencies();

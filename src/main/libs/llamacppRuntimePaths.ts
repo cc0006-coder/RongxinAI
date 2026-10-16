@@ -91,6 +91,8 @@ export function buildLlamaCppExecutableCandidates(input: {
     join(input.userRuntimeRoot, 'current', `llama-server${extension}`),
     join(input.resourceRoot, 'llamacpp', `llama-server${extension}`),
     join(input.resourceRoot, 'llamacpp', 'bin', `llama-server${extension}`),
+    join(input.resourceRoot, 'llamacpp-bundled', 'bin', `llama-server${extension}`),
+    join(input.resourceRoot, 'llamacpp-bundled', `llama-server${extension}`),
   ];
 
   if (!input.isPackaged) {

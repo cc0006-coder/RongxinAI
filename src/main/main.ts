@@ -8,6 +8,10 @@ import { registerMagpieIpc } from './magpie/registerIpc';
 import { readOllamaProviderSnapshot } from './magpie/ollamaProviderBinding';
 import { buildLlamaCppRunningModelBinding } from './libs/llamacppAgentBinding';
 import {
+  resolveEffectiveInferenceEdition,
+  usesBundledLlamaCppRuntime,
+} from './libs/inferenceEditionPolicy';
+import {
   app,
   BrowserWindow,
   dialog,
@@ -3655,6 +3659,8 @@ if (!gotTheLock) {
   });
 
   ipcMain.handle(AppIpc.GetVersion, () => app.getVersion());
+  ipcMain.handle(AppIpc.GetInferenceEdition, () => resolveEffectiveInferenceEdition());
+  ipcMain.handle(AppIpc.UsesBundledLlamaCppRuntime, () => usesBundledLlamaCppRuntime());
   ipcMain.handle(AppIpc.IsDev, () => canUseDevTools()); // 开发环境打开调试面板
   ipcMain.handle(AppIpc.IsEnterprise, () => isEnterprise);
   ipcMain.handle(AppIpc.GetSystemLocale, () => app.getLocale());

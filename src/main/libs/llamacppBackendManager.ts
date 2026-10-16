@@ -25,6 +25,7 @@ import {
   LlamaCppRuntimeCudaMajor,
   resolvePreferredLlamaCppRuntimeCudaMajor,
 } from '../../shared/llamacpp';
+import { allowEndUserLlamaCppRuntimeDownload } from './inferenceEditionPolicy';
 import { readBundledLlamaCppBackendManifest } from './llamacppBackendResources';
 import { listLlamaCppRuntimeDevices } from './llamacppManager';
 import { LlamaCppRuntimeTargetId } from './llamacppRuntimeConstants';
@@ -678,6 +679,11 @@ export async function installLlamaCppBackend(input: {
   signal?: AbortSignal;
   onProgress?: BackendInstallProgressReporter;
 }): Promise<LlamaCppRuntimeInstallResult> {
+  if (!allowEndUserLlamaCppRuntimeDownload()) {
+    return failedInstall(
+      'This edition ships a fixed llama.cpp runtime and does not support downloading or switching backends.',
+    );
+  }
   const manifest = input.manifest ?? (await fetchLlamaCppBackendManifest());
   if (input.signal?.aborted) {
     return { ...failedInstall('Download cancelled.'), cancelled: true };

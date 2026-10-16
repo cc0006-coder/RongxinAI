@@ -4,6 +4,8 @@ export type NvidiaGpuInfo = {
   memoryTotalMiB: number;
   memoryFreeMiB?: number;
   driverVersion?: string;
+  /** NVIDIA compute capability major.minor (e.g. 8.9 for RTX 40 series). */
+  computeCapability?: string;
 };
 
 export type NvidiaSmiSnapshot = {
