@@ -48,16 +48,5 @@ mkdir -p "${BIN_DIR}"
 cp "${BUILD_DIR}/bin/${EXECUTABLE_NAME}" "${BIN_DIR}/${EXECUTABLE_NAME}"
 chmod +x "${BIN_DIR}/${EXECUTABLE_NAME}" 2>/dev/null || true
 
-cat > "${EDITION_ROOT}/manifest.json" <<EOF
-{
-  "schemaVersion": 1,
-  "backend": {
-    "version": "bundled",
-    "backend": "${PLATFORM}-x64-cuda-rtx40"
-  },
-  "executable": "bin/${EXECUTABLE_NAME}",
-  "cpuFallbackExecutable": "../cpu/bin/${EXECUTABLE_NAME}"
-}
-EOF
-
 echo "[build-llamacpp-cuda-rtx40] Built ${BIN_DIR}/${EXECUTABLE_NAME} (sm_89, CUDA 12.4)."
+echo "[build-llamacpp-cuda-rtx40] Run scripts/finalize-llamacpp-cuda-edition.cjs to bundle CUDA libs and CPU fallback."

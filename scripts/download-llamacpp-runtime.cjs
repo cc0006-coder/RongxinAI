@@ -293,7 +293,7 @@ async function main() {
   if (sync.status !== 0) process.exit(sync.status || 1);
 }
 
-async function extractArchive(archivePath, extractDir) {
+async function extractArchiveToDirectory(archivePath, extractDir) {
   const extension = resolveArchiveExtension(archivePath);
   if (extension === '.tar.gz') {
     await tar.x({
@@ -325,6 +325,10 @@ async function extractArchive(archivePath, extractDir) {
     return;
   }
   await extractZip(archivePath, { dir: extractDir });
+}
+
+async function extractArchive(archivePath, extractDir) {
+  return extractArchiveToDirectory(archivePath, extractDir);
 }
 
 function installNormalizedRuntime(options) {
@@ -482,7 +486,20 @@ function validateRuntimeTarget(runtimeDir, targetId) {
   }
 }
 
-if (require.main === module && process.argv[2] === '--download-one') {
+if (require.main === module && process.argv[2] === '--extract-only') {
+  const archivePath = process.argv[3];
+  const extractDir = process.argv[4];
+  if (!archivePath || !extractDir) {
+    console.error('usage: download-llamacpp-runtime.cjs --extract-only <archive> <extractDir>');
+    process.exit(1);
+  }
+  extractArchiveToDirectory(path.resolve(archivePath), path.resolve(extractDir)).catch(error => {
+    console.error(
+      `[download-llamacpp-runtime] ${error instanceof Error ? error.message : String(error)}`,
+    );
+    process.exit(1);
+  });
+} else if (require.main === module && process.argv[2] === '--download-one') {
   const payload = JSON.parse(process.argv[3] || '{}');
   downloadFileWithFallback(
     payload.urls,
@@ -505,6 +522,7 @@ if (require.main === module && process.argv[2] === '--download-one') {
 }
 
 module.exports = {
+  extractArchiveToDirectory,
   formatDownloadFailureMessage,
   resolveArchiveExtension,
   resolveExecutableName,

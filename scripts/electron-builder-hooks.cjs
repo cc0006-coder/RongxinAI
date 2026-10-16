@@ -422,6 +422,34 @@ function installSkillDependencies() {
   );
 }
 
+function configureInferenceEditionPublishUrls(context) {
+  const edition = (process.env.ZHIYUAN_UPDATE_VARIANT || 'lite').trim().toLowerCase();
+  const arch = resolveTargetArch(context);
+  const platformName = context?.electronPlatformName;
+  if (!platformName) return;
+
+  /** @type {string | undefined} */
+  let publishUrl;
+  if (platformName === 'darwin') {
+    publishUrl = `https://updates.rongxzyai.com/v2/electron/stable/darwin/${arch}/${edition}`;
+  } else if (platformName === 'win32') {
+    publishUrl = `https://updates.rongxzyai.com/v2/electron/stable/win32/x64/${edition}`;
+  } else if (platformName === 'linux') {
+    publishUrl = `https://updates.rongxzyai.com/v2/electron/stable/linux/x64/appimage-${edition}`;
+  }
+  if (!publishUrl) return;
+
+  const applyPublishUrl = section => {
+    if (!section || typeof section !== 'object') return;
+    section.publish = [{ provider: 'generic', url: publishUrl }];
+  };
+  applyPublishUrl(context.packager.config);
+  applyPublishUrl(context.packager.config.mac);
+  applyPublishUrl(context.packager.config.win);
+  applyPublishUrl(context.packager.config.linux);
+  console.log(`[electron-builder-hooks] inference edition ${edition}: publish url ${publishUrl}`);
+}
+
 function configureInferenceEditionResources(context) {
   const edition = (process.env.ZHIYUAN_UPDATE_VARIANT || 'lite').trim().toLowerCase();
   const extraResources = Array.isArray(context.packager.config.extraResources)
@@ -475,6 +503,7 @@ function configureInferenceEditionResources(context) {
 async function beforePack(context) {
   configureMagpieResources(context);
   configureMacAutoUpdateMetadata(context);
+  configureInferenceEditionPublishUrls(context);
   configureInferenceEditionResources(context);
   ensureBundledChannelRuntime(context);
   // Install skill dependencies first (for all platforms)

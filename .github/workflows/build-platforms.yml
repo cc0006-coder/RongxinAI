@@ -134,9 +134,19 @@ jobs:
           bun run setup:posix-uv-runtime
           bun run setup:posix-python-runtime
           bun run engram:runtime:${{ matrix.runtime_target }}
+      - name: Sync vendor llama.cpp CPU edition
+        if: ${{ matrix.inference_edition != 'lite' }}
+        run: node scripts/sync-vendor-llamacpp-cpu-edition.cjs
+        env:
+          LLAMACPP_CPU_TARGET_ID: ${{ matrix.runtime_target }}
       - name: Build RTX 40 CUDA llama.cpp runtime
         if: ${{ matrix.inference_edition == 'cuda' && matrix.platform != 'macos' }}
         run: bash scripts/build-llamacpp-cuda-rtx40.sh ${{ matrix.platform == 'windows' && 'win' || 'linux' }}
+      - name: Finalize CUDA llama.cpp edition bundle
+        if: ${{ matrix.inference_edition == 'cuda' && matrix.platform != 'macos' }}
+        run: node scripts/finalize-llamacpp-cuda-edition.cjs
+        env:
+          LLAMACPP_CUDA_PLATFORM: ${{ matrix.platform == 'windows' && 'win32' || 'linux' }}
       - name: Stage bundled llama.cpp runtime
         if: ${{ matrix.inference_edition != 'lite' }}
         run: bun run prepare:inference-edition-runtime
@@ -165,6 +175,19 @@ jobs:
           NODE_OPTIONS: '--max-old-space-size=4096'
           MODELSCOPE_TOKENS: ${{ secrets.MODELSCOPE_TOKENS }}
           ZHIYUAN_UPDATE_VARIANT: ${{ matrix.inference_edition }}
+      - name: Smoke bundled llama-server
+        if: ${{ matrix.inference_edition != 'lite' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          server="$(find resources/llamacpp-bundled -name 'llama-server*' -type f | head -n 1)"
+          if [[ -z "$server" ]]; then
+            echo "Bundled llama-server not found under resources/llamacpp-bundled" >&2
+            exit 1
+          fi
+          chmod +x "$server" 2>/dev/null || true
+          "$server" --version || "$server" --help | head -n 5
+          du -sh resources/llamacpp-bundled vendor/llamacpp/* 2>/dev/null || true
       - name: Verify packaged ACP registry and bridges
         run: node scripts/ci/verify-packaged-acp-resources.mjs
       - name: Verify Windows package runtimes with a clean PATH

@@ -671,13 +671,10 @@ jobs:
             mkdir -p "manifest/electron/${target_file}"
             aws s3api get-object --bucket "$R2_BUCKET" --key "$key" "manifest/electron/${target_file}/${filename}" > /dev/null
           done < <(jq -s -r '[.[].artifacts[] | select(.kind == "metadata")] | sort_by(.platform,.arch,.variant) | .[] | [.key,(.platform+":"+.arch+":"+.variant),.filename] | @tsv' "${metadata[@]}")
+          mapfile -t electron_specs < <(node scripts/release/print-electron-updater-verify-specs.mjs)
           node scripts/release/verify-electron-updater-generation.mjs \
             '${{ needs.prepare-release.outputs.version }}' \
-            manifest/electron/win32-x64-lite/latest.yml:win32:x64:lite \
-            manifest/electron/darwin-x64-default/latest-mac.yml:darwin:x64:default \
-            manifest/electron/darwin-arm64-default/latest-mac.yml:darwin:arm64:default \
-            manifest/electron/linux-x64-appimage/latest-linux.yml:linux:x64:appimage \
-            manifest/electron/linux-x64-deb/latest-linux.yml:linux:x64:deb \
+            "${electron_specs[@]}" \
             --artifact-metadata "${metadata[@]}"
           generation_key='generations/${{ needs.prepare-release.outputs.version }}/legacy/stable.json'
           set +e

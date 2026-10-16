@@ -4,6 +4,8 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
+import { resolveReleaseArtifactFormat } from './inference-edition-targets.mjs';
+
 const [releaseVersion, outputPath, ...specs] = process.argv.slice(2);
 if (!releaseVersion || !outputPath || specs.length === 0) {
   throw new Error(
@@ -13,31 +15,6 @@ if (!releaseVersion || !outputPath || specs.length === 0) {
 
 const bucket = process.env.R2_BUCKET;
 if (!bucket) throw new Error('R2_BUCKET is required');
-
-function resolveArtifactFormat(platform, variant, kind) {
-  if (kind === 'metadata') {
-    return { extension: '.yml', contentType: 'application/x-yaml' };
-  }
-  if (kind === 'blockmap') {
-    return { extension: '.blockmap', contentType: 'application/octet-stream' };
-  }
-  if (kind === 'updater' && platform === 'darwin' && variant === 'default') {
-    return { extension: '.zip', contentType: 'application/zip' };
-  }
-  if (platform === 'win32' && (variant === 'lite' || variant === 'full')) {
-    return { extension: '.exe', contentType: 'application/vnd.microsoft.portable-executable' };
-  }
-  if (platform === 'darwin' && variant === 'default') {
-    return { extension: '.dmg', contentType: 'application/x-apple-diskimage' };
-  }
-  if (platform === 'linux' && variant === 'deb') {
-    return { extension: '.deb', contentType: 'application/vnd.debian.binary-package' };
-  }
-  if (platform === 'linux' && variant === 'appimage') {
-    return { extension: '.appimage', contentType: 'application/vnd.appimage' };
-  }
-  throw new Error(`Unsupported release target: ${platform}:${variant}`);
-}
 
 async function sha256File(filePath) {
   const hash = crypto.createHash('sha256');
@@ -131,7 +108,7 @@ for (const spec of specs) {
   if (!filePath || !platform || !arch || !variant || extra.length > 0) {
     throw new Error(`Invalid artifact spec: ${spec}`);
   }
-  const format = resolveArtifactFormat(platform, variant, kind);
+  const format = resolveReleaseArtifactFormat(platform, variant, kind);
   const stat = await fsp.stat(filePath);
   const filename = path.basename(filePath);
   if (!stat.isFile() || stat.size === 0 || path.extname(filename).toLowerCase() !== format.extension) {
