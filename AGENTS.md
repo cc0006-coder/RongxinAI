@@ -59,11 +59,9 @@ Node >=24 <25，Bun >=1.3。包管理与脚本一律用 Bun（`bun install`、`b
 
 ### 托管 Python 运行时
 
-首启同步到 `userData/runtimes/`，两层：
-
-- `resources/python-win|mac|linux`：便携 CPython（uv 管理），agent shell PATH 基础解释器，`UV_PYTHON` 绑定。
-- `resources/skill-python/layers/shared`：合并所有内置 Skill requirements 的单个 uv venv，经 `applyManagedPythonEnv`（`src/main/libs/managedPythonEnv.ts`）前置到 PATH。Windows 需 `python3.exe` 别名（安装脚本创建，`ensureSharedSkillWindowsPython3Alias` 自愈）。`run_skill_script` 经 `findSkillPythonExecutable` 解析并强制 per-Skill `requirementsSha256` manifest 门。
-- **模型面策略三处必须同步**：`SYSTEM_PROMPT.md`（托管环境与工具节）、`piPythonEnvGuidelines.ts`（`python-runtime` contribution，用户覆盖系统提示后仍生效）、`piBashToolGuidelines.ts` 的 `getPiBashPythonEnvViolation`（拦截向托管解释器 pip install、直接 `python` 调内置 Skill 脚本）。
+- **独立工作区 Python 运行时**（`src/main/pythonRuntime/`）：由独立子进程 `dist-electron/python-runtime-runner.js`（`runner.ts`）管理版本锁定的 `python-build-standalone` CPython + `uv`（`manifest.json` 校验 SHA-256），按工作区哈希创建原子交换 `venv`（`userData/python-runtime/envs/<sha256>/venv`），暴露 `python_execute` 与 `python_install` 工具（`src/main/libs/agentEngine/piPythonTools.ts`）。POSIX 用 detached 进程组（`-pid`）清理子进程，Windows 用 `resources/python-runtime/job-runner.exe`（`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`）。
+- **内置 Skill 共享 Python 环境**：首启同步到 `userData/runtimes/`，`resources/python-win|mac|linux` + `resources/skill-python/layers/shared` 经 `applyManagedPythonEnv`（`src/main/libs/managedPythonEnv.ts`）注入 shell PATH；`run_skill_script` 经 `findSkillPythonExecutable` 解析并强制 per-Skill `requirementsSha256` manifest 门。
+- **模型面策略三处必须同步**：`SYSTEM_PROMPT.md`（托管环境与工具节）、`piPythonEnvGuidelines.ts`（`python-runtime` contribution，用户覆盖系统提示后仍生效）、`piBashToolGuidelines.ts` 的 `getPiBashPythonEnvViolation`（拦截在 bash 中直接用 `python` 调内置 `$SKILLS_ROOT` 脚本，引导改用 `run_skill_script`）。
 
 ### 记忆系统
 
