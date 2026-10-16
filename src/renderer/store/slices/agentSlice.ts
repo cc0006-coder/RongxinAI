@@ -1,24 +1,11 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
-interface AgentSummary {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  model: string;
-  workingDirectory: string;
-  enabled: boolean;
-  pinned: boolean;
-  pinOrder?: number | null;
-  isDefault: boolean;
-  source: 'custom' | 'preset' | 'expert-package' | 'expert-package-member';
-  presetId: string;
-  systemPrompt: string;
-  skillIds: string[];
-}
+import type { Agent } from '../../types/agent';
+
+export type AgentSummary = Agent;
 
 interface AgentState {
-  agents: AgentSummary[];
+  agents: Agent[];
   currentAgentId: string;
   loading: boolean;
 }

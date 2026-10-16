@@ -2855,16 +2855,13 @@ const resolveSessionExpertSnapshots = (expertIds: string[]): CoworkSessionExpert
   const snapshots: CoworkSessionExpertInput[] = [];
   for (const expertId of normalizedExpertIds) {
     const expert = getAgentManager().getAgent(expertId);
-    if (
-      !expert ||
-      (expert.source !== CoworkSessionExpertSource.Package &&
-        expert.source !== CoworkSessionExpertSource.Member)
-    ) {
-      throw new Error(`Expert '${expertId}' is not installed or is not an expert package agent`);
+    if (!expert) {
+      throw new Error(`Expert '${expertId}' is not found`);
     }
     let promptSnapshot = expert.systemPrompt.trim();
     const packageId = expert.presetId.trim() || expert.id;
     let skillIds = [...expert.skillIds];
+    const mcpIds = Array.isArray(expert.mcpIds) ? expert.mcpIds : [];
 
     // Bundled presets are file-sourced like regular skills: the preset
     // markdown is read live on every session so editing the preset takes
@@ -2890,16 +2887,23 @@ const resolveSessionExpertSnapshots = (expertIds: string[]): CoworkSessionExpert
     }
     const contentHash = crypto
       .createHash('sha256')
-      .update(JSON.stringify({ packageId, expertId: expert.id, promptSnapshot, skillIds }))
+      .update(JSON.stringify({ packageId, expertId: expert.id, promptSnapshot, skillIds, mcpIds }))
       .digest('hex');
+    const source: CoworkSessionExpertSource =
+      expert.source === 'expert-package-member'
+        ? CoworkSessionExpertSource.Member
+        : expert.source === 'expert-package' || expert.source === 'preset'
+          ? CoworkSessionExpertSource.Package
+          : CoworkSessionExpertSource.Custom;
+
     snapshots.push({
       expertId: expert.id,
       packageId,
       expertName: expert.name,
-      source: expert.source,
+      source,
       promptSnapshot,
       skillIds,
-      capabilityPolicy: {},
+      capabilityPolicy: mcpIds.length > 0 ? { mcpIds } : {},
       contentHash,
     });
   }
@@ -3816,6 +3820,13 @@ if (!gotTheLock) {
     }
   });
 
+  ipcMain.handle(
+    SkillsIpc.CreateCustom,
+    async (_event, params: { id: string; name: string; description: string; content: string }) => {
+      return getSkillManager().createCustomSkill(params);
+    },
+  );
+
   ipcMain.handle('skills:delete', async (_event, id: string) => {
     try {
       const skills = await getSkillManager().deleteSkill(id);
@@ -4242,6 +4253,37 @@ if (!gotTheLock) {
       if (result.canceled || result.filePaths.length === 0)
         return { success: true, cancelled: true };
       const input = JSON.parse(await fs.promises.readFile(result.filePaths[0], 'utf8')) as unknown;
+      const servers = importMcpConfig(input);
+      const existingNames = new Set(
+        getMcpStore()
+          .listServers()
+          .map(server => server.name),
+      );
+      for (const server of servers) {
+        if (existingNames.has(server.name)) {
+          return { success: false, error: `MCP server "${server.name}" already exists.` };
+        }
+        const validationError = await validateMcpServerConfig(server);
+        if (validationError) return { success: false, error: validationError };
+      }
+      for (const server of servers) getMcpStore().createServer(server);
+      const refreshed = await refreshMcpBridge();
+      return {
+        success: !refreshed.error,
+        servers: getMcpStore().listServers(),
+        error: refreshed.error,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to import MCP configuration',
+      };
+    }
+  });
+
+  ipcMain.handle(McpIpc.ImportConfigContent, async (_event, jsonContent: string) => {
+    try {
+      const input = JSON.parse(jsonContent) as unknown;
       const servers = importMcpConfig(input);
       const existingNames = new Set(
         getMcpStore()

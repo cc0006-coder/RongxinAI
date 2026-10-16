@@ -1084,10 +1084,20 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
       // pi's formatSkillsForPrompt — no manual injection here to avoid
       // duplicating the skills section.
       const basePrompt = options.systemPrompt?.trim() || '';
+      const expertSession =
+        options.expertIds?.length && this.store
+          ? this.store
+              .getSession(sessionId, 0, { includeArtifacts: false })
+              ?.experts?.find(e => options.expertIds!.includes(e.expertId))
+          : null;
+      const effectiveSkillIds = normalizeSkillIds([
+        ...normalizeSkillIds(options.skillIds),
+        ...(expertSession?.skillIds ?? []),
+      ]);
       const chatMode = options.sessionMode === CoworkSessionMode.Chat;
       const resourceState: PiResourceState = {
         systemPrompt: basePrompt,
-        skillIds: normalizeSkillIds(options.skillIds),
+        skillIds: effectiveSkillIds,
         maxOutputTokens: DEFAULT_PI_LOCAL_MAX_TOKENS,
         fileToolsEnabled: options.confirmationMode !== 'text',
         unattended: options.unattended === true,
@@ -1204,8 +1214,11 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
           : undefined;
       const codemodeEnabled =
         options.codemode === true && !resourceState.chatMode && options.confirmationMode !== 'text';
+      const expertMcpIds = Array.isArray(expertSession?.capabilityPolicy?.mcpIds)
+        ? (expertSession.capabilityPolicy.mcpIds as string[])
+        : [];
       const mcpNativeBridge =
-        options.mcpNativeBridge === true &&
+        (options.mcpNativeBridge === true || expertMcpIds.length > 0) &&
         !resourceState.chatMode &&
         Boolean(this.mcpServerManager);
       const resourceLoader = await this.createPiResourceLoader(pi, workspaceRoot, resourceState, {
@@ -1218,6 +1231,7 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
           WorkbenchApprovalMode.Ask,
         enableCodemode: codemodeEnabled,
         enableMcpNative: mcpNativeBridge,
+        expertMcpIds,
       });
       this.applyPiCompactionOverrides(
         settingsManager,
@@ -2925,6 +2939,8 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
       enableCodemode?: boolean;
       /** Register pi's builtin MCP extension, replacing the gateway tool. */
       enableMcpNative?: boolean;
+      /** Explicit MCP server IDs bound to the active session expert. */
+      expertMcpIds?: string[];
     },
     additionalExtensionFactories: PiExtensionFactory[] = [],
   ): Promise<PiResourceLoader> {
@@ -3075,11 +3091,26 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
         ...(approvalContext?.enableMcpNative && pi.createMcpExtension && this.mcpServerManager
           ? [
               pi.createMcpExtension({
-                loadConfig: () =>
-                  buildPiLoadedMcpConfig(this.mcpServerManager?.lastEnabledRecords ?? []),
-                createTransport: buildPiMcpTransportFactory(
-                  () => this.mcpServerManager?.lastEnabledRecords ?? [],
-                ),
+                loadConfig: () => {
+                  const allRecords = this.mcpServerManager?.lastEnabledRecords ?? [];
+                  const expertMcpIds = approvalContext?.expertMcpIds;
+                  const records =
+                    expertMcpIds && expertMcpIds.length > 0
+                      ? allRecords.filter(
+                          r => expertMcpIds.includes(r.id) || expertMcpIds.includes(r.name),
+                        )
+                      : allRecords;
+                  return buildPiLoadedMcpConfig(records);
+                },
+                createTransport: buildPiMcpTransportFactory(() => {
+                  const allRecords = this.mcpServerManager?.lastEnabledRecords ?? [];
+                  const expertMcpIds = approvalContext?.expertMcpIds;
+                  return expertMcpIds && expertMcpIds.length > 0
+                    ? allRecords.filter(
+                        r => expertMcpIds.includes(r.id) || expertMcpIds.includes(r.name),
+                      )
+                    : allRecords;
+                }),
               }),
             ]
           : []),

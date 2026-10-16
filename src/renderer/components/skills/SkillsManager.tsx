@@ -49,6 +49,7 @@ import { MarketplaceSkillDocumentDialog } from './MarketplaceSkillDocumentDialog
 import SkillSecurityReport from './SkillSecurityReport';
 import { SkillsPageToolbar } from './SkillsPageToolbar';
 import { useMarketplaceSearchPool } from './useMarketplaceSearchPool';
+import CreateSkillDialog from './CreateSkillDialog';
 
 type DirectImportSource = 'zip' | 'folder' | 'remote';
 
@@ -77,6 +78,7 @@ const SkillsManager: React.FC<SkillsManagerProps> = ({
   const [isAddSkillMenuOpen, setIsAddSkillMenuOpen] = useState(false);
   const [isRemoteImportOpen, setIsRemoteImportOpen] = useState(false);
   const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
+  const [isCreateCustomSkillOpen, setIsCreateCustomSkillOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<SkillTab>(SkillTab.Installed);
   const [skillCategory, setSkillCategory] = useState<SkillCategory>(SkillCategory.All);
   const [marketplaceSkills, setMarketplaceSkills] = useState<MarketplaceSkill[]>([]);
@@ -801,6 +803,7 @@ const SkillsManager: React.FC<SkillsManagerProps> = ({
             onUploadFolder={handleUploadSkillFolder}
             onOpenRemoteImport={handleOpenRemoteImport}
             onCreateByChat={handleCreateByChat}
+            onCreateCustomSkill={() => setIsCreateCustomSkillOpen(true)}
             onOpenMarketplace={() =>
               void window.electron.shell.openExternal('https://modelscope.cn/skills')
             }
@@ -1151,6 +1154,8 @@ const SkillsManager: React.FC<SkillsManagerProps> = ({
           error={skillActionError}
         />
       )}
+
+      <CreateSkillDialog open={isCreateCustomSkillOpen} onOpenChange={setIsCreateCustomSkillOpen} />
     </div>
   );
 };

@@ -329,6 +329,7 @@ export interface Agent {
   workingDirectory: string;
   icon: string;
   skillIds: string[];
+  mcpIds?: string[];
   enabled: boolean;
   pinned: boolean;
   pinOrder?: number | null;
@@ -350,6 +351,7 @@ export interface CreateAgentRequest {
   workingDirectory?: string;
   icon?: string;
   skillIds?: string[];
+  mcpIds?: string[];
   source?: AgentSource;
   presetId?: string;
   triageOverride?: import('../shared/triage').AgentTriageOverride;
@@ -364,6 +366,7 @@ export interface UpdateAgentRequest {
   workingDirectory?: string;
   icon?: string;
   skillIds?: string[];
+  mcpIds?: string[];
   enabled?: boolean;
   pinned?: boolean;
   triageOverride?: import('../shared/triage').AgentTriageOverride | null;
@@ -2463,6 +2466,7 @@ export class CoworkStore {
       working_directory?: string | null;
       icon: string;
       skill_ids: string;
+      mcp_ids?: string;
       enabled: number;
       pinned?: number | null;
       pin_order?: number | null;
@@ -2491,6 +2495,7 @@ export class CoworkStore {
       working_directory?: string | null;
       icon: string;
       skill_ids: string;
+      mcp_ids?: string;
       enabled: number;
       pinned?: number | null;
       pin_order?: number | null;
@@ -2541,8 +2546,8 @@ export class CoworkStore {
     this.db
       .prepare(
         `
-      INSERT INTO agents (id, name, description, system_prompt, identity, model, working_directory, icon, skill_ids, enabled, is_default, source, preset_id, triage_override, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?)
+      INSERT INTO agents (id, name, description, system_prompt, identity, model, working_directory, icon, skill_ids, mcp_ids, enabled, is_default, source, preset_id, triage_override, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -2555,6 +2560,7 @@ export class CoworkStore {
         request.workingDirectory || '',
         normalizeAgentAvatarIcon(request.icon),
         JSON.stringify(request.skillIds || []),
+        JSON.stringify(request.mcpIds || []),
         request.source || 'custom',
         request.presetId || '',
         request.triageOverride ? JSON.stringify(request.triageOverride) : null,
@@ -2616,6 +2622,10 @@ export class CoworkStore {
       setClauses.push('skill_ids = ?');
       values.push(JSON.stringify(updates.skillIds));
     }
+    if (updates.mcpIds !== undefined) {
+      setClauses.push('mcp_ids = ?');
+      values.push(JSON.stringify(updates.mcpIds));
+    }
     if (updates.enabled !== undefined) {
       setClauses.push('enabled = ?');
       values.push(updates.enabled ? 1 : 0);
@@ -2658,6 +2668,7 @@ export class CoworkStore {
     working_directory?: string | null;
     icon: string;
     skill_ids: string;
+    mcp_ids?: string;
     enabled: number;
     pinned?: number | null;
     pin_order?: number | null;
@@ -2673,6 +2684,14 @@ export class CoworkStore {
       skillIds = JSON.parse(row.skill_ids);
     } catch {
       skillIds = [];
+    }
+    let mcpIds: string[] = [];
+    if (row.mcp_ids) {
+      try {
+        mcpIds = JSON.parse(row.mcp_ids);
+      } catch {
+        mcpIds = [];
+      }
     }
     let triageOverride = undefined;
     if (row.triage_override) {
@@ -2692,6 +2711,7 @@ export class CoworkStore {
       workingDirectory: row.working_directory || '',
       icon: row.icon,
       skillIds,
+      mcpIds,
       enabled: Boolean(row.enabled),
       pinned: Boolean(row.pinned),
       pinOrder: row.pinned ? (row.pin_order ?? null) : null,

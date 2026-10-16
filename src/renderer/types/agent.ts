@@ -10,6 +10,7 @@ export interface Agent {
   workingDirectory: string;
   icon: string;
   skillIds: string[];
+  mcpIds?: string[];
   enabled: boolean;
   pinned: boolean;
   pinOrder?: number | null;
@@ -31,6 +32,7 @@ export interface CreateAgentRequest {
   workingDirectory?: string;
   icon?: string;
   skillIds?: string[];
+  mcpIds?: string[];
   source?: string;
   presetId?: string;
 }
@@ -44,6 +46,7 @@ export interface UpdateAgentRequest {
   workingDirectory?: string;
   icon?: string;
   skillIds?: string[];
+  mcpIds?: string[];
   enabled?: boolean;
   pinned?: boolean;
 }

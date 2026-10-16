@@ -127,6 +127,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke(SkillsIpc.FetchMarketplace, options),
     fetchMarketplaceContent: (skillId: string) =>
       ipcRenderer.invoke(SkillsIpc.FetchMarketplaceContent, skillId),
+    createCustom: (params: { id: string; name: string; description: string; content: string }) =>
+      ipcRenderer.invoke(SkillsIpc.CreateCustom, params),
     onChanged: (callback: () => void) => onPushVoid(SkillsIpc.Changed, callback),
   },
 
@@ -147,6 +149,8 @@ contextBridge.exposeInMainWorld('electron', {
     loadIcon: (iconPath: string) => ipcRenderer.invoke(McpIpc.LoadIcon, iconPath),
     exportConfig: () => ipcRenderer.invoke(McpIpc.ExportConfig),
     importConfig: () => ipcRenderer.invoke(McpIpc.ImportConfig),
+    importConfigContent: (jsonContent: string) =>
+      ipcRenderer.invoke(McpIpc.ImportConfigContent, jsonContent),
     onBridgeSyncStart: (callback: () => void) => onPushVoid(McpIpc.BridgeSyncStart, callback),
     onBridgeSyncDone: (callback: (data: { tools: number; error?: string }) => void) =>
       onPush(McpIpc.BridgeSyncDone, callback),
