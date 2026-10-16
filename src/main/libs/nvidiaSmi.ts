@@ -9,7 +9,7 @@ const NVIDIA_SMI_TIMEOUT_MS = 2500;
 const NVIDIA_SMI_MAX_BUFFER = 128 * 1024;
 
 const NVIDIA_SMI_QUERY_ARGS = [
-  '--query-gpu=index,name,memory.total,memory.free',
+  '--query-gpu=index,name,memory.total,memory.free,driver_version',
   '--format=csv,noheader,nounits',
 ];
 
@@ -48,6 +48,7 @@ export async function getNvidiaSmiSnapshot(
         available: true,
         checkedAt,
         gpus,
+        ...(gpus[0]?.driverVersion ? { driverVersion: gpus[0].driverVersion } : {}),
       };
     } catch (error) {
       lastError = error;
@@ -93,9 +94,15 @@ function parseNvidiaSmiLine(line: string): NvidiaGpuInfo | null {
   if (parts.length < 4) return null;
 
   const index = Number(parts[0]);
-  const memoryFreeMiB = parseMemoryMiB(parts[parts.length - 1]);
-  const memoryTotalMiB = parseMemoryMiB(parts[parts.length - 2]);
-  const name = parts.slice(1, -2).join(', ').trim();
+  const driverVersion = parts.length >= 5 ? parts[parts.length - 1] : undefined;
+  const memoryFreeMiB = parseMemoryMiB(parts[parts.length >= 5 ? parts.length - 2 : parts.length - 1]);
+  const memoryTotalMiB = parseMemoryMiB(
+    parts[parts.length >= 5 ? parts.length - 3 : parts.length - 2],
+  );
+  const name = parts
+    .slice(1, parts.length >= 5 ? -3 : -2)
+    .join(', ')
+    .trim();
 
   if (!Number.isInteger(index) || index < 0 || memoryTotalMiB === null) {
     return null;
@@ -106,6 +113,7 @@ function parseNvidiaSmiLine(line: string): NvidiaGpuInfo | null {
     name: name || `GPU ${index}`,
     memoryTotalMiB,
     ...(memoryFreeMiB !== null ? { memoryFreeMiB } : {}),
+    ...(driverVersion ? { driverVersion } : {}),
   };
 }
 

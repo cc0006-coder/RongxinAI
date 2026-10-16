@@ -31,6 +31,7 @@ import {
   LlamaCppMemoryPolicy,
   LlamaCppModelResidencyMode,
   LlamaCppStructuredServiceFieldKey,
+  normalizeLlamaCppKvCacheType,
 } from '../../shared/llamacpp';
 import {
   ModelCapabilityStatus,
@@ -780,6 +781,8 @@ export function registerLlamaCppIpcHandlers(
               memoryPolicy: serviceConfig.memoryPolicy,
               memoryBudgetPercent: serviceConfig.memoryBudgetPercent,
               modelSizeBytes: targetModel.size,
+              cacheTypeK: serviceConfig.cacheTypeK,
+              cacheTypeV: serviceConfig.cacheTypeV,
               signal: controller.signal,
               onLog: launchLogger.report,
               loadModel: async launchInput => {
@@ -1351,6 +1354,8 @@ export function sanitizeLlamaCppServiceConfig(
   if (splitMode) next.splitMode = splitMode;
   if (tensorSplit) next.tensorSplit = tensorSplit;
   if (isOnOffAuto(config?.flashAttn)) next.flashAttn = config.flashAttn;
+  if (isLlamaCppKvCacheType(config?.cacheTypeK)) next.cacheTypeK = config.cacheTypeK.trim();
+  if (isLlamaCppKvCacheType(config?.cacheTypeV)) next.cacheTypeV = config.cacheTypeV.trim();
   if (isOnOffAuto(config?.jinja)) next.jinja = config.jinja;
   if (isOnOffAuto(config?.reasoning)) next.reasoning = config.reasoning;
   if (isReasoningFormat(config?.reasoningFormat)) next.reasoningFormat = config.reasoningFormat;
@@ -1576,7 +1581,12 @@ function isRuntimeBackend(
 function isRuntimeCudaMajor(
   value: unknown,
 ): value is NonNullable<LlamaCppServiceConfig['runtimeCudaMajor']> {
-  return value === LlamaCppRuntimeCudaMajor.Cuda12;
+  return value === LlamaCppRuntimeCudaMajor.Cuda12 || value === LlamaCppRuntimeCudaMajor.Cuda13;
+}
+
+function isLlamaCppKvCacheType(value: unknown): value is string {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  return normalizeLlamaCppKvCacheType(value) === value.trim().toLowerCase();
 }
 
 function isReasoningFormat(

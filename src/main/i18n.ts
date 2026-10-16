@@ -159,6 +159,10 @@ const translations: Record<LanguageType, Record<string, string>> = {
       '卸载请求已发出，但应用暂时还没确认该模型已完全从运行列表移除。请稍等几秒后再观察。',
     llamacppLaunchContextExceedsTrainingLimit:
       '该模型请求加载上下文 {requested} 已超过训练上限 {trained}，请调低 ctx-size 后再启动。',
+    llamacppCudaBackendFallbackCpu:
+      'CUDA 后端安装或校验失败，已自动改用 CPU 版 llama.cpp 运行时。可在「本地推理 → 运行时」中手动选择 CUDA 后端。',
+    llamacppCudaBackendFallbackCpuDriver:
+      '检测到 NVIDIA 驱动与所选 CUDA 运行时可能不兼容，已自动改用 CPU 版 llama.cpp 运行时。请升级驱动或切换 CUDA 12/13 后端后重试。',
     llamacppLaunchContextClampedToTrainingLimit:
       '请求上下文 {requested} 已超过模型训练上限 {trained}，已按 {effective} 启动。',
     llamacppLoadModelLimitReached: '模型数量达到上限，请卸载模型后重试。',
@@ -574,6 +578,10 @@ const translations: Record<LanguageType, Record<string, string>> = {
       'The unload request was sent, but the app has not yet confirmed that the model fully disappeared from the running list. Wait a few seconds and check again.',
     llamacppLaunchContextExceedsTrainingLimit:
       'The requested load context {requested} exceeds the model training limit {trained}. Lower ctx-size before loading the model.',
+    llamacppCudaBackendFallbackCpu:
+      'The CUDA backend install or validation failed, so ZhiYuan Agent switched to the CPU llama.cpp runtime automatically. Choose a CUDA backend manually in Local Inference → Runtime if needed.',
+    llamacppCudaBackendFallbackCpuDriver:
+      'The selected CUDA runtime may be incompatible with the installed NVIDIA driver. ZhiYuan Agent switched to the CPU llama.cpp runtime automatically. Upgrade the driver or switch between CUDA 12/13 backends and retry.',
     llamacppLaunchContextClampedToTrainingLimit:
       'The requested context {requested} exceeds the model training limit {trained}. Started with {effective} instead.',
     llamacppLoadModelLimitReached:

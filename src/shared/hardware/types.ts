@@ -3,6 +3,7 @@ export type NvidiaGpuInfo = {
   name: string;
   memoryTotalMiB: number;
   memoryFreeMiB?: number;
+  driverVersion?: string;
 };
 
 export type NvidiaSmiSnapshot = {
@@ -10,6 +11,8 @@ export type NvidiaSmiSnapshot = {
   available: boolean;
   checkedAt: string;
   gpus: NvidiaGpuInfo[];
+  /** Driver version from the first GPU row, when available. */
+  driverVersion?: string;
   error?: string;
 };
 

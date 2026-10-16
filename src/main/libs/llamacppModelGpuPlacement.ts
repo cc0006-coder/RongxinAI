@@ -1,5 +1,6 @@
 import type { NvidiaSmiSnapshot, SystemMemorySnapshot } from '../../shared/hardware';
 import {
+  estimateRequiredLlamaCppModelVramMiB,
   LlamaCppMemoryPolicy,
   type LlamaCppModelLaunchInput,
   LlamaCppRuntimeBackend,
@@ -20,13 +21,10 @@ export const LlamaCppModelGpuPlacementMode = {
 export type LlamaCppModelGpuPlacementMode =
   (typeof LlamaCppModelGpuPlacementMode)[keyof typeof LlamaCppModelGpuPlacementMode];
 
-export const LlamaCppModelGpuPlacementDefaults = {
-  ModelSizeMultiplier: 1.2,
-  ContextBufferPer1024TokensMiB: 256,
-} as const;
-
 export type LlamaCppModelGpuPlacementInput = {
   launchInput: LlamaCppModelLaunchInput;
+  cacheTypeK?: string;
+  cacheTypeV?: string;
   runtimeBackend?: LlamaCppRuntimeBackend;
   runtimeCapabilities?: Pick<
     LlamaCppRuntimeCapabilities,
@@ -98,24 +96,7 @@ export function planLlamaCppModelGpuPlacement(
   };
 }
 
-export function estimateRequiredLlamaCppModelVramMiB(input: {
-  modelSizeBytes?: number;
-  ctxSize?: number;
-}): number {
-  const modelSizeMiB =
-    input.modelSizeBytes && input.modelSizeBytes > 0
-      ? Math.ceil(input.modelSizeBytes / 1024 / 1024)
-      : 0;
-  const contextBufferMiB =
-    input.ctxSize && input.ctxSize > 0
-      ? Math.ceil(input.ctxSize / 1024) *
-        LlamaCppModelGpuPlacementDefaults.ContextBufferPer1024TokensMiB
-      : 0;
-
-  return Math.ceil(
-    modelSizeMiB * LlamaCppModelGpuPlacementDefaults.ModelSizeMultiplier + contextBufferMiB,
-  );
-}
+export { estimateRequiredLlamaCppModelVramMiB } from '../../shared/llamacpp/modelMemoryEstimate';
 
 function validateManualMemoryBudget(
   input: LlamaCppModelGpuPlacementInput,
@@ -137,7 +118,9 @@ function validateManualMemoryBudget(
   const availableMemoryMiB = availableSystemMemoryMiB + sumAvailableVramMiB(input.nvidiaSnapshot);
   const requiredMemoryMiB = estimateRequiredLlamaCppModelVramMiB({
     modelSizeBytes: input.modelSizeBytes,
-    ctxSize: input.launchInput.options?.ctxSize,
+    contextSize: input.launchInput.options?.ctxSize,
+    cacheTypeK: input.cacheTypeK,
+    cacheTypeV: input.cacheTypeV,
   });
   if (requiredMemoryMiB <= availableMemoryMiB) return null;
 
@@ -215,7 +198,9 @@ function selectGpuIndexes(input: LlamaCppModelGpuPlacementInput): number[] {
     .sort((left, right) => (right.memoryFreeMiB ?? 0) - (left.memoryFreeMiB ?? 0));
   const requiredMemoryMiB = estimateRequiredLlamaCppModelVramMiB({
     modelSizeBytes: input.modelSizeBytes,
-    ctxSize: input.launchInput.options?.ctxSize,
+    contextSize: input.launchInput.options?.ctxSize,
+    cacheTypeK: input.cacheTypeK,
+    cacheTypeV: input.cacheTypeV,
   });
   const selected: number[] = [];
   let availableMemoryMiB = 0;

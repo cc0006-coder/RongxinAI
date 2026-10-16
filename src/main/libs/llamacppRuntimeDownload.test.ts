@@ -34,7 +34,7 @@ const {
 };
 
 describe('llamacpp runtime download script', () => {
-  test('defaults to the configured Cloudflare asset with GitHub fallback', () => {
+  test('defaults to the domestic mirror without GitHub fallback', () => {
     const rootDir = process.cwd();
 
     expect(resolveRuntimeReleaseTag(rootDir, {})).toBe('b9244');
@@ -42,6 +42,14 @@ describe('llamacpp runtime download script', () => {
       'https://rongxinai.krli.org/llamacpp/b9244/llama-b9244-bin-win-cpu-x64.zip',
     );
     expect(resolveRuntimeDownloadSources('win-x64', { rootDir, env: {} })).toEqual([
+      'https://rongxinai.krli.org/llamacpp/b9244/llama-b9244-bin-win-cpu-x64.zip',
+    ]);
+    expect(
+      resolveRuntimeDownloadSources('win-x64', {
+        rootDir,
+        env: { LLAMACPP_RUNTIME_ALLOW_GITHUB_FALLBACK: '1' },
+      }),
+    ).toEqual([
       'https://rongxinai.krli.org/llamacpp/b9244/llama-b9244-bin-win-cpu-x64.zip',
       'https://github.com/ggml-org/llama.cpp/releases/download/b9244/llama-b9244-bin-win-cpu-x64.zip',
     ]);

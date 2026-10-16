@@ -20,6 +20,8 @@
       "win-x64-cuda-12": "llama-{tag}-bin-win-cuda-12.4-x64.zip",
       "win-arm64": "llama-{tag}-bin-win-cpu-arm64.zip",
       "linux-x64": "llama-{tag}-bin-ubuntu-x64.tar.gz",
+      "linux-x64-cuda-12": "llama-{tag}-bin-ubuntu-cuda-12.4-x64.tar.gz",
+      "linux-x64-cuda-13": "llama-{tag}-bin-ubuntu-cuda-13.3-x64.tar.gz",
       "linux-arm64": "llama-{tag}-bin-ubuntu-arm64.tar.gz"
     },
     "runtimeCompanionAssets": {
@@ -167,6 +169,8 @@
     "llamacpp:runtime:download:win-x64": "node scripts/download-llamacpp-runtime.cjs win-x64",
     "llamacpp:runtime:download:win-x64-cuda-12": "node scripts/download-llamacpp-runtime.cjs win-x64-cuda-12",
     "llamacpp:runtime:download:linux-x64": "node scripts/download-llamacpp-runtime.cjs linux-x64",
+    "llamacpp:runtime:download:linux-x64-cuda-12": "node scripts/download-llamacpp-runtime.cjs linux-x64-cuda-12",
+    "llamacpp:runtime:download:linux-x64-cuda-13": "node scripts/download-llamacpp-runtime.cjs linux-x64-cuda-13",
     "llamacpp:runtime:download:linux-arm64": "node scripts/download-llamacpp-runtime.cjs linux-arm64",
     "llamacpp:runtime:mac-arm64": "node scripts/run-build-llamacpp-runtime.cjs mac-arm64 && node scripts/sync-llamacpp-runtime-current.cjs mac-arm64",
     "llamacpp:runtime:mac-x64": "node scripts/run-build-llamacpp-runtime.cjs mac-x64 && node scripts/sync-llamacpp-runtime-current.cjs mac-x64",

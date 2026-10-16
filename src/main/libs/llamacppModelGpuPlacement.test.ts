@@ -8,7 +8,6 @@ import {
 } from '../../shared/llamacpp';
 import {
   estimateRequiredLlamaCppModelVramMiB,
-  LlamaCppModelGpuPlacementDefaults,
   LlamaCppModelGpuPlacementMode,
   planLlamaCppModelGpuPlacement,
 } from './llamacppModelGpuPlacement';
@@ -109,10 +108,17 @@ describe('llamacppModelGpuPlacement', () => {
     });
   });
 
-  test('estimates model startup memory from model size and context buffer', () => {
-    expect(estimateRequiredLlamaCppModelVramMiB({ modelSizeBytes: gib(10), ctxSize: 4096 })).toBe(
-      Math.ceil(10 * 1024 * LlamaCppModelGpuPlacementDefaults.ModelSizeMultiplier) + 4 * 256,
-    );
+  test('estimates model startup memory from model size and KV cache context', () => {
+    const small = estimateRequiredLlamaCppModelVramMiB({
+      modelSizeBytes: gib(10),
+      contextSize: 4096,
+    });
+    const large = estimateRequiredLlamaCppModelVramMiB({
+      modelSizeBytes: gib(10),
+      contextSize: 32_768,
+    });
+    expect(small).toBeGreaterThan(10 * 1024);
+    expect(large).toBeGreaterThan(small);
   });
 });
 

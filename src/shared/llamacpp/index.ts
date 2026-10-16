@@ -1,5 +1,7 @@
 export * from './constants';
+export * from './cudaRuntime';
 export * from './defaults';
+export * from './kvCacheTypes';
 export * from './launchValidation';
 export * from './modelMemoryEstimate';
 export * from './agentEligibility';

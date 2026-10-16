@@ -84,6 +84,7 @@ import { resolveBundledPresetMembers } from '../../presetExpertSnapshot';
 import { buildPiConversationHistoryTool } from '../../conversationHistory/piTool';
 import type { ConversationHistoryService } from '../../conversationHistory/service';
 import { t } from '../../i18n';
+import { assertLlamaCppWorkModeContext } from '../llamacppWorkModeContextGuard';
 import type { LegacyMemoryMigrationService } from '../../memory/legacyMemoryMigrationService';
 import { MemoryInjectionDedup } from '../../memory/memoryInjectionDedup';
 import { buildPiProjectMemoryTool } from '../../memory/piMemoryTool';
@@ -1178,6 +1179,12 @@ export class PiRuntimeAdapter extends EventEmitter implements PiRuntime {
             ? t('coworkLocalModelToolCallingUnsupported')
             : t('coworkLocalModelToolCallingUnknown'),
         );
+      }
+      if (options.sessionMode === CoworkSessionMode.Work) {
+        assertLlamaCppWorkModeContext({
+          providerName: resolvedModel.providerName,
+          modelId: modelId,
+        });
       }
       resourceState.maxOutputTokens = resolvedModel.maxOutputTokens;
       const sessionModel = this.resolvePiSessionModel(resolvedModel.model, resourceState.chatMode);

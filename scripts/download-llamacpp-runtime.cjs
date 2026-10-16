@@ -17,6 +17,8 @@ const OfficialAssetByTarget = {
   'win-x64-cuda-12': 'llama-{tag}-bin-win-cuda-12.4-x64.tar.gz',
   'win-arm64': 'llama-{tag}-bin-win-cpu-arm64.tar.gz',
   'linux-x64': 'llama-{tag}-bin-ubuntu-x64.tar.gz',
+  'linux-x64-cuda-12': 'llama-{tag}-bin-ubuntu-cuda-12.4-x64.tar.gz',
+  'linux-x64-cuda-13': 'llama-{tag}-bin-ubuntu-cuda-13.3-x64.tar.gz',
   'linux-arm64': 'llama-{tag}-bin-ubuntu-arm64.tar.gz',
 };
 const CompanionAssetsByTarget = {
@@ -160,8 +162,17 @@ function resolveAssetDownloadSources(targetId, assetName, options = {}) {
 
   const repo = resolveGitHubRepo(env);
   const releaseTag = resolveRuntimeReleaseTag(rootDir, env);
+  const mirrorUrl = `${DEFAULT_LLAMACPP_RUNTIME_RELEASES_URL}/${releaseTag}/${assetName}`;
+  const allowGithubFallback = ['1', 'true', 'yes'].includes(
+    String(env.LLAMACPP_RUNTIME_ALLOW_GITHUB_FALLBACK || '')
+      .trim()
+      .toLowerCase(),
+  );
+  if (!allowGithubFallback) {
+    return [mirrorUrl];
+  }
   return [
-    `${DEFAULT_LLAMACPP_RUNTIME_RELEASES_URL}/${releaseTag}/${assetName}`,
+    mirrorUrl,
     `https://github.com/${repo}/releases/download/${releaseTag}/${assetName}`,
   ];
 }

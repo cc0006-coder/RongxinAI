@@ -23,6 +23,7 @@ import type {
 import type { LlamaCppBackendRef } from '../../shared/llamacpp';
 import {
   applyAutomaticLlamaCppServiceDefaults,
+  isLikelyCudaDriverMismatchError,
   LLAMACPP_RUNTIME_INSTALL_PROGRESS_ID,
   resolveLlamaCppLaunchContext,
 } from '../../shared/llamacpp';
@@ -36,6 +37,7 @@ import {
   listLlamaCppBackends,
   readCurrentBackendRef,
   recommendLlamaCppBackend,
+  recommendLlamaCppCpuBackend,
   resolveLlamaCppBackendDownloadSize,
   syncCurrentBackend,
   uninstallLlamaCppBackend,
@@ -87,7 +89,11 @@ import {
 } from './llamacppServe';
 import { listLlamaCppRuntimeDevices } from './llamacppRuntimeDeviceProbe';
 import { MarketplaceService } from './marketplaceService';
-import { getNvidiaSmiSnapshot } from './nvidiaSmi';
+import {
+  getLlamaCppNvidiaSnapshot,
+  hasAvailableNvidiaGpu,
+} from './llamacppNvidiaEnvironment';
+import { t } from '../i18n';
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = '8080';
@@ -308,7 +314,7 @@ export class LlamaCppManager extends EventEmitter {
     }
 
     const runtimeConfig = await this.resolveRuntimeServiceConfig();
-    const nvidiaSnapshot = process.platform === 'win32' ? await getNvidiaSmiSnapshot() : null;
+    const nvidiaSnapshot = await getLlamaCppNvidiaSnapshot();
     const resolvedRuntimeConfig = applyAutomaticLlamaCppServiceDefaults(runtimeConfig, {
       nvidiaSnapshot,
     });
@@ -419,14 +425,15 @@ export class LlamaCppManager extends EventEmitter {
     }
 
     const runtimeRoot = getUserLlamaCppRuntimeRoot();
-    const nvidiaSnapshot = process.platform === 'win32' ? await getNvidiaSmiSnapshot() : null;
+    const nvidiaSnapshot = await getLlamaCppNvidiaSnapshot();
     const manifest = await fetchLlamaCppBackendManifest();
-    const ref = recommendLlamaCppBackend({
+    let ref = recommendLlamaCppBackend({
       manifest,
       platform: process.platform,
       arch: process.arch,
-      hasNvidiaGpu: Boolean(nvidiaSnapshot?.available && nvidiaSnapshot.gpus.length > 0),
+      hasNvidiaGpu: hasAvailableNvidiaGpu(nvidiaSnapshot),
       config,
+      driverVersion: nvidiaSnapshot?.driverVersion,
     });
     if (!ref) {
       const error = `Unsupported platform for llama.cpp runtime: ${process.platform}/${process.arch}.`;
@@ -454,12 +461,12 @@ export class LlamaCppManager extends EventEmitter {
       modelName: ref.versionBackend,
     } satisfies LlamaCppInstallProgress);
 
-    const result = await installLlamaCppBackend({
+    let result = await installLlamaCppBackend({
       runtimeRoot,
       ref,
       platform: process.platform,
       arch: process.arch,
-      hasNvidiaGpu: Boolean(nvidiaSnapshot?.available && nvidiaSnapshot.gpus.length > 0),
+      hasNvidiaGpu: hasAvailableNvidiaGpu(nvidiaSnapshot),
       manifest,
       switchCurrent: false,
       signal: options.signal,
@@ -467,10 +474,47 @@ export class LlamaCppManager extends EventEmitter {
         this.emit('install-progress', {
           ...progress,
           modelId: LLAMACPP_RUNTIME_PROGRESS_KEY,
-          modelName: ref.versionBackend,
+          modelName: ref!.versionBackend,
         } satisfies LlamaCppInstallProgress);
       },
     });
+
+    let installWarning: string | undefined;
+    if (
+      !result.success &&
+      ref.backend.includes('cuda') &&
+      !options.signal?.aborted
+    ) {
+      const cpuRef = recommendLlamaCppCpuBackend({
+        manifest,
+        platform: process.platform,
+        arch: process.arch,
+        config,
+      });
+      if (cpuRef && cpuRef.versionBackend !== ref.versionBackend) {
+        installWarning = isLikelyCudaDriverMismatchError(result.error)
+          ? t('llamacppCudaBackendFallbackCpuDriver')
+          : t('llamacppCudaBackendFallbackCpu');
+        ref = cpuRef;
+        result = await installLlamaCppBackend({
+          runtimeRoot,
+          ref: cpuRef,
+          platform: process.platform,
+          arch: process.arch,
+          hasNvidiaGpu: false,
+          manifest,
+          switchCurrent: false,
+          signal: options.signal,
+          onProgress: progress => {
+            this.emit('install-progress', {
+              ...progress,
+              modelId: LLAMACPP_RUNTIME_PROGRESS_KEY,
+              modelName: cpuRef.versionBackend,
+            } satisfies LlamaCppInstallProgress);
+          },
+        });
+      }
+    }
 
     if (result.success && result.executablePath) {
       if (backendRequiresDeviceValidation(ref)) {
@@ -543,7 +587,7 @@ export class LlamaCppManager extends EventEmitter {
         error: result.cancelled ? undefined : 'error' in result ? result.error : undefined,
       } satisfies LlamaCppInstallProgress);
     }
-    return result;
+    return installWarning && result.success ? { ...result, warning: installWarning } : result;
   }
 
   async listBackends(): Promise<LlamaCppBackendListResult> {
@@ -554,12 +598,12 @@ export class LlamaCppManager extends EventEmitter {
     }
 
     try {
-      const nvidiaSnapshot = process.platform === 'win32' ? await getNvidiaSmiSnapshot() : null;
+      const nvidiaSnapshot = await getLlamaCppNvidiaSnapshot();
       const result = await listLlamaCppBackends({
         runtimeRoot: getUserLlamaCppRuntimeRoot(),
         platform: process.platform,
         arch: process.arch,
-        hasNvidiaGpu: Boolean(nvidiaSnapshot?.available && nvidiaSnapshot.gpus.length > 0),
+        hasNvidiaGpu: hasAvailableNvidiaGpu(nvidiaSnapshot),
         config: this.getServiceConfig(),
       });
       const nextResult = { success: true as const, ...result };
@@ -607,8 +651,8 @@ export class LlamaCppManager extends EventEmitter {
       ref,
       process.platform,
     );
-    const nvidiaSnapshot = process.platform === 'win32' ? await getNvidiaSmiSnapshot() : null;
-    const hasNvidiaGpu = Boolean(nvidiaSnapshot?.available && nvidiaSnapshot.gpus.length > 0);
+    const nvidiaSnapshot = await getLlamaCppNvidiaSnapshot();
+    const hasNvidiaGpu = hasAvailableNvidiaGpu(nvidiaSnapshot);
     const backendAlreadyInstalled = fs.existsSync(installedExecutablePath);
     if (!backendAlreadyInstalled) {
       this.emit('install-progress', {
@@ -893,13 +937,13 @@ export class LlamaCppManager extends EventEmitter {
     // Verify the executable is actually runnable
     try {
       await this.stop();
-      const nvidiaSnapshot = process.platform === 'win32' ? await getNvidiaSmiSnapshot() : null;
+      const nvidiaSnapshot = await getLlamaCppNvidiaSnapshot();
       const result = await importLlamaCppBackendPath({
         runtimeRoot: getUserLlamaCppRuntimeRoot(),
         sourcePath: sourceDir,
         platform: process.platform,
         arch: process.arch,
-        hasNvidiaGpu: Boolean(nvidiaSnapshot?.available && nvidiaSnapshot.gpus.length > 0),
+        hasNvidiaGpu: hasAvailableNvidiaGpu(nvidiaSnapshot),
       });
       if (!result.success || !result.executablePath) return result;
       this.executablePath = result.executablePath;
@@ -1444,8 +1488,7 @@ export class LlamaCppManager extends EventEmitter {
       return configuredContextSize;
     }
 
-    const nvidiaSnapshot =
-      process.platform === 'win32' ? await getNvidiaSmiSnapshot().catch((): null => null) : null;
+    const nvidiaSnapshot = await getLlamaCppNvidiaSnapshot();
     const runtimeConfig = applyAutomaticLlamaCppServiceDefaults(this.getServiceConfig(), {
       nvidiaSnapshot,
     });

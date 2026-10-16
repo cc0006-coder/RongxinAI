@@ -19,7 +19,12 @@ import type {
   LlamaCppServiceConfig,
   LlamaCppStatusSnapshot,
 } from '../../shared/llamacpp';
-import { LlamaCppBackendError, LlamaCppRuntimeBackend } from '../../shared/llamacpp';
+import {
+  LlamaCppBackendError,
+  LlamaCppRuntimeBackend,
+  LlamaCppRuntimeCudaMajor,
+  resolvePreferredLlamaCppRuntimeCudaMajor,
+} from '../../shared/llamacpp';
 import { readBundledLlamaCppBackendManifest } from './llamacppBackendResources';
 import { listLlamaCppRuntimeDevices } from './llamacppManager';
 import { LlamaCppRuntimeTargetId } from './llamacppRuntimeConstants';
@@ -32,7 +37,6 @@ import {
 
 const DEFAULT_RUNTIME_VERSION = 'b9518';
 const DEFAULT_RELEASE_BASE_URL = 'https://rongxinai.krli.org/llamacpp';
-const GITHUB_RELEASE_BASE_URL = 'https://github.com/ggml-org/llama.cpp/releases/download';
 const BUILD_INFO_FILE = 'runtime-build-info.json';
 const LLAMACPP_BACKEND_MANIFEST_FETCH_TIMEOUT_MS = 2_000;
 let hasLoggedManifestFallback = false;
@@ -288,6 +292,60 @@ export function buildFallbackManifest(version = DEFAULT_RUNTIME_VERSION): LlamaC
         'cpu',
         `llama-${version}-bin-win-opencl-adreno-arm64.tar.gz`,
       ),
+      {
+        ...createFallbackEntry(
+          version,
+          LlamaCppRuntimeTargetId.LinuxX64Cuda12,
+          'linux',
+          'x64',
+          'cuda',
+          `llama-${version}-bin-ubuntu-cuda-12.4-x64.tar.gz`,
+        ),
+        cudaMajor: '12',
+      },
+      {
+        ...createFallbackEntry(
+          version,
+          LlamaCppRuntimeTargetId.LinuxX64Cuda13,
+          'linux',
+          'x64',
+          'cuda',
+          `llama-${version}-bin-ubuntu-cuda-13.3-x64.tar.gz`,
+        ),
+        cudaMajor: '13',
+      },
+      createFallbackEntry(
+        version,
+        LlamaCppRuntimeTargetId.LinuxX64,
+        'linux',
+        'x64',
+        'cpu',
+        `llama-${version}-bin-ubuntu-x64.tar.gz`,
+      ),
+      createFallbackEntry(
+        version,
+        LlamaCppRuntimeTargetId.LinuxArm64,
+        'linux',
+        'arm64',
+        'cpu',
+        `llama-${version}-bin-ubuntu-arm64.tar.gz`,
+      ),
+      createFallbackEntry(
+        version,
+        LlamaCppRuntimeTargetId.MacArm64,
+        'darwin',
+        'arm64',
+        'metal',
+        `llama-${version}-bin-macos-arm64.tar.gz`,
+      ),
+      createFallbackEntry(
+        version,
+        LlamaCppRuntimeTargetId.MacX64,
+        'darwin',
+        'x64',
+        'metal',
+        `llama-${version}-bin-macos-x64.tar.gz`,
+      ),
     ],
   };
 }
@@ -491,6 +549,7 @@ export function recommendLlamaCppBackend(input: {
   arch: string;
   hasNvidiaGpu: boolean;
   config?: LlamaCppServiceConfig;
+  driverVersion?: string;
 }): LlamaCppBackendRef | undefined {
   const normalizedPlatform = normalizePlatform(input.platform);
   const normalizedArch = normalizeArch(input.arch);
@@ -505,13 +564,34 @@ export function recommendLlamaCppBackend(input: {
       (!version || entry.version === version),
   );
   const desiredBackend = input.config?.runtimeBackend ?? LlamaCppRuntimeBackend.Auto;
+  const preferredCudaMajor = resolvePreferredLlamaCppRuntimeCudaMajor({
+    configured: input.config?.runtimeCudaMajor,
+    driverVersion: input.driverVersion,
+  });
   const selected = selectBackendByPriority(compatible, {
     platform: normalizedPlatform,
     arch: normalizedArch,
     hasNvidiaGpu: input.hasNvidiaGpu,
     desiredBackend,
+    preferredCudaMajor,
   });
   return selected ? toBackendRef(selected.version, selected.backend) : undefined;
+}
+
+export function recommendLlamaCppCpuBackend(input: {
+  manifest: LlamaCppBackendManifest;
+  platform: NodeJS.Platform;
+  arch: string;
+  config?: LlamaCppServiceConfig;
+}): LlamaCppBackendRef | undefined {
+  return recommendLlamaCppBackend({
+    ...input,
+    hasNvidiaGpu: false,
+    config: {
+      ...input.config,
+      runtimeBackend: LlamaCppRuntimeBackend.Cpu,
+    },
+  });
 }
 
 function selectBackendByPriority(
@@ -521,29 +601,34 @@ function selectBackendByPriority(
     arch: string;
     hasNvidiaGpu: boolean;
     desiredBackend: LlamaCppRuntimeBackend;
+    preferredCudaMajor: (typeof LlamaCppRuntimeCudaMajor)[keyof typeof LlamaCppRuntimeCudaMajor];
   },
 ): LlamaCppBackendManifestEntry | undefined {
-  if (input.platform === 'win32' && input.arch === 'x64') {
+  if (
+    (input.platform === 'win32' || input.platform === 'linux') &&
+    input.arch === 'x64'
+  ) {
     if (input.desiredBackend === LlamaCppRuntimeBackend.Cpu) {
       return compatible.find(entry => entry.accelerator === 'cpu');
     }
     if (input.desiredBackend === LlamaCppRuntimeBackend.Cuda) {
-      return (
-        compatible.find(entry => entry.accelerator === 'cuda' && entry.cudaMajor === '13') ??
-        compatible.find(entry => entry.accelerator === 'cuda' && entry.cudaMajor === '12')
-      );
+      return pickCudaBackendEntry(compatible, input.preferredCudaMajor);
     }
     if (input.hasNvidiaGpu) {
       return (
-        compatible.find(entry => entry.accelerator === 'cuda' && entry.cudaMajor === '13') ??
-        compatible.find(entry => entry.accelerator === 'cuda' && entry.cudaMajor === '12') ??
+        pickCudaBackendEntry(compatible, input.preferredCudaMajor) ??
+        compatible.find(entry => entry.accelerator === 'cpu')
+      );
+    }
+    if (input.platform === 'win32') {
+      return (
         compatible.find(entry => entry.accelerator === 'vulkan') ??
         compatible.find(entry => entry.accelerator === 'cpu')
       );
     }
     return (
-      compatible.find(entry => entry.accelerator === 'vulkan') ??
-      compatible.find(entry => entry.accelerator === 'cpu')
+      compatible.find(entry => entry.accelerator === 'cpu') ??
+      compatible.find(entry => entry.accelerator === 'vulkan')
     );
   }
   if (input.platform === 'win32' && input.arch === 'arm64') {
@@ -560,6 +645,25 @@ function selectBackendByPriority(
     compatible.find(entry => entry.accelerator === 'hip') ??
     compatible.find(entry => entry.accelerator === 'cpu') ??
     compatible[0]
+  );
+}
+
+function pickCudaBackendEntry(
+  compatible: LlamaCppBackendManifestEntry[],
+  preferredCudaMajor: (typeof LlamaCppRuntimeCudaMajor)[keyof typeof LlamaCppRuntimeCudaMajor],
+): LlamaCppBackendManifestEntry | undefined {
+  const secondaryCudaMajor =
+    preferredCudaMajor === LlamaCppRuntimeCudaMajor.Cuda13
+      ? LlamaCppRuntimeCudaMajor.Cuda12
+      : LlamaCppRuntimeCudaMajor.Cuda13;
+  return (
+    compatible.find(
+      entry => entry.accelerator === 'cuda' && entry.cudaMajor === preferredCudaMajor,
+    ) ??
+    compatible.find(
+      entry => entry.accelerator === 'cuda' && entry.cudaMajor === secondaryCudaMajor,
+    ) ??
+    compatible.find(entry => entry.accelerator === 'cuda')
   );
 }
 
@@ -1311,9 +1415,7 @@ async function downloadFile(
     return;
   }
 
-  const urls = url.includes('gitee.com/')
-    ? [url, url.replace(DEFAULT_RELEASE_BASE_URL, GITHUB_RELEASE_BASE_URL)]
-    : [url];
+  const urls = [url];
   const errors: string[] = [];
   for (const attemptUrl of urls) {
     try {
@@ -1593,9 +1695,14 @@ function inferDirectoryBackendId(
       : LlamaCppRuntimeTargetId.MacX64;
   }
   if (normalizedPlatform === 'linux') {
-    return normalizedArch === 'arm64'
-      ? LlamaCppRuntimeTargetId.LinuxArm64
-      : LlamaCppRuntimeTargetId.LinuxX64;
+    if (normalizedArch === 'arm64') return LlamaCppRuntimeTargetId.LinuxArm64;
+    if (hasCuda13RuntimeMarkers(sourceDir) || hasCuda13RuntimeMarkers(executableDir)) {
+      return LlamaCppRuntimeTargetId.LinuxX64Cuda13;
+    }
+    if (hasCuda12RuntimeMarkers(sourceDir) || hasCuda12RuntimeMarkers(executableDir)) {
+      return LlamaCppRuntimeTargetId.LinuxX64Cuda12;
+    }
+    return LlamaCppRuntimeTargetId.LinuxX64;
   }
   if (normalizedPlatform !== 'win32') return undefined;
   if (normalizedArch === 'arm64') return LlamaCppRuntimeTargetId.WinArm64;
