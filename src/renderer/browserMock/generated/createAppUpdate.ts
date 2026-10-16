@@ -5,11 +5,12 @@ export function createAppUpdate(runtime: BrowserMockRuntime): Window['electron']
   return {
     getChannel: async () => {
       runtime.warnOnce('appUpdate.getChannel');
-      return 'stable';
+      return 'beta';
     },
-    setChannel: async channel => {
+    setChannel: async _p0 => {
+      void _p0;
       runtime.warnOnce('appUpdate.setChannel');
-      return channel;
+      return 'beta';
     },
     getState: async () => {
       runtime.warnOnce('appUpdate.getState');
