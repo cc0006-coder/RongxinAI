@@ -160,11 +160,7 @@ jobs:
         with:
           cuda: '12.4.1'
           method: network
-          sub-packages: |
-            nvcc
-            cudart
-            cublas
-            cublas_dev
+          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev"]'
       - name: Verify CUDA compiler
         if: ${{ matrix.inference_edition == 'cuda' && matrix.platform != 'macos' }}
         shell: bash
