@@ -37,13 +37,20 @@ export function resolveLlamaCppRuntimeAssetDownloadUrls(
   }
 
   const mirrorUrl = `${DEFAULT_LLAMACPP_RUNTIME_RELEASES_URL.replace(/\/$/, '')}/${releaseTag}/${assetName}`;
+  const githubRepo = env.LLAMACPP_RUNTIME_GITHUB_REPO?.trim() || LLAMACPP_RUNTIME_GITHUB_REPO;
+  const githubUrl = `https://github.com/${githubRepo}/releases/download/${releaseTag}/${assetName}`;
+
+  const ciPreferred = isTruthyEnv(env.CI) || isTruthyEnv(env.GITHUB_ACTIONS);
+  if (ciPreferred) {
+    if (isTruthyEnv(env.LLAMACPP_RUNTIME_ALLOW_MIRROR_FALLBACK)) {
+      return [githubUrl, mirrorUrl];
+    }
+    return [githubUrl];
+  }
+
   if (!isTruthyEnv(env[LLAMACPP_RUNTIME_ALLOW_GITHUB_FALLBACK_ENV])) {
     return [mirrorUrl];
   }
 
-  const githubRepo = env.LLAMACPP_RUNTIME_GITHUB_REPO?.trim() || LLAMACPP_RUNTIME_GITHUB_REPO;
-  return [
-    mirrorUrl,
-    `https://github.com/${githubRepo}/releases/download/${releaseTag}/${assetName}`,
-  ];
+  return [mirrorUrl, githubUrl];
 }

@@ -30,7 +30,16 @@ function resolveRuntimeTargetId(platform = process.platform, arch = process.arch
   throw new Error(`Unsupported host for cpu edition sync: ${platform}/${arch}`);
 }
 
-function readExpectedArchiveSha256(targetId) {
+const BUNDLE_CHECKSUMS_PATH = path.join(ROOT, 'resources', 'llamacpp-backends', 'bundle-checksums.json');
+
+function readExpectedArchiveSha256(targetId, assetName) {
+  if (fs.existsSync(BUNDLE_CHECKSUMS_PATH)) {
+    const checksums = JSON.parse(fs.readFileSync(BUNDLE_CHECKSUMS_PATH, 'utf8'));
+    const pinned = checksums.sha256?.[assetName];
+    if (typeof pinned === 'string' && /^[a-f0-9]{64}$/.test(pinned)) {
+      return pinned.toLowerCase();
+    }
+  }
   if (!fs.existsSync(BUNDLED_MANIFEST_PATH)) return undefined;
   const manifest = JSON.parse(fs.readFileSync(BUNDLED_MANIFEST_PATH, 'utf8'));
   const backendId =
@@ -76,7 +85,7 @@ function main() {
 
   const run = async () => {
     const sourceUrl = await downloadToFile(urls, archivePath);
-    const expectedSha256 = readExpectedArchiveSha256(targetId);
+    const expectedSha256 = readExpectedArchiveSha256(targetId, archiveName);
     if (expectedSha256) {
       const actualSha256 = sha256File(archivePath);
       if (actualSha256 !== expectedSha256) {

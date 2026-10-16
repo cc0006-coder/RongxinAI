@@ -20,6 +20,30 @@ describe('resolveLlamaCppRuntimeAssetDownloadUrls', () => {
     ]);
   });
 
+  test('prefers official GitHub in CI with optional mirror fallback', () => {
+    expect(
+      resolveLlamaCppRuntimeAssetDownloadUrls({
+        targetId: 'linux-x64',
+        assetName: 'llama-b9244-bin-ubuntu-x64.tar.gz',
+        releaseTag: 'b9244',
+        env: { GITHUB_ACTIONS: 'true' },
+      }),
+    ).toEqual([
+      'https://github.com/ggml-org/llama.cpp/releases/download/b9244/llama-b9244-bin-ubuntu-x64.tar.gz',
+    ]);
+    expect(
+      resolveLlamaCppRuntimeAssetDownloadUrls({
+        targetId: 'linux-x64',
+        assetName: 'llama-b9244-bin-ubuntu-x64.tar.gz',
+        releaseTag: 'b9244',
+        env: { CI: 'true', LLAMACPP_RUNTIME_ALLOW_MIRROR_FALLBACK: '1' },
+      }),
+    ).toEqual([
+      'https://github.com/ggml-org/llama.cpp/releases/download/b9244/llama-b9244-bin-ubuntu-x64.tar.gz',
+      `${DEFAULT_LLAMACPP_RUNTIME_RELEASES_URL}/b9244/llama-b9244-bin-ubuntu-x64.tar.gz`,
+    ]);
+  });
+
   test('adds GitHub only when explicitly allowed', () => {
     expect(
       resolveLlamaCppRuntimeAssetDownloadUrls({

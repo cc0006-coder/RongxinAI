@@ -146,6 +146,17 @@ function resolveRuntimeCompanionDownloadSources(targetId, options = {}) {
   );
 }
 
+function isTruthyEnv(value) {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
+function isCiOfficialGithubPreferred(env) {
+  return isTruthyEnv(env.CI) || isTruthyEnv(env.GITHUB_ACTIONS);
+}
+
 function resolveAssetDownloadSources(targetId, assetName, options = {}) {
   const env = options.env ?? process.env;
   const rootDir = options.rootDir ?? path.resolve(__dirname, '..');
@@ -163,18 +174,19 @@ function resolveAssetDownloadSources(targetId, assetName, options = {}) {
   const repo = resolveGitHubRepo(env);
   const releaseTag = resolveRuntimeReleaseTag(rootDir, env);
   const mirrorUrl = `${DEFAULT_LLAMACPP_RUNTIME_RELEASES_URL}/${releaseTag}/${assetName}`;
-  const allowGithubFallback = ['1', 'true', 'yes'].includes(
-    String(env.LLAMACPP_RUNTIME_ALLOW_GITHUB_FALLBACK || '')
-      .trim()
-      .toLowerCase(),
-  );
-  if (!allowGithubFallback) {
-    return [mirrorUrl];
+  const githubUrl = `https://github.com/${repo}/releases/download/${releaseTag}/${assetName}`;
+
+  if (isCiOfficialGithubPreferred(env)) {
+    if (isTruthyEnv(env.LLAMACPP_RUNTIME_ALLOW_MIRROR_FALLBACK)) {
+      return [githubUrl, mirrorUrl];
+    }
+    return [githubUrl];
   }
-  return [
-    mirrorUrl,
-    `https://github.com/${repo}/releases/download/${releaseTag}/${assetName}`,
-  ];
+
+  if (isTruthyEnv(env.LLAMACPP_RUNTIME_ALLOW_GITHUB_FALLBACK)) {
+    return [mirrorUrl, githubUrl];
+  }
+  return [mirrorUrl];
 }
 
 function formatDownloadFailureMessage(status, statusText, url, targetId, rootDir) {

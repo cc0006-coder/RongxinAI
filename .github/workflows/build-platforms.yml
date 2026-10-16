@@ -75,9 +75,11 @@ jobs:
       matrix: ${{ fromJSON(needs.plan-platforms.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     environment: release
+    env:
+      ZHIYUAN_UPDATE_VARIANT: ${{ matrix.inference_edition }}
     # A release build may download upstream runtimes, but it must never consume
     # a runner indefinitely when an upstream command stalls.
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
       - name: Enforce retired runtime decoupling
@@ -139,8 +141,41 @@ jobs:
         run: node scripts/sync-vendor-llamacpp-cpu-edition.cjs
         env:
           LLAMACPP_CPU_TARGET_ID: ${{ matrix.runtime_target }}
+      - name: Cache llama.cpp CUDA source
+        if: ${{ matrix.inference_edition == 'cuda' && matrix.platform != 'macos' }}
+        uses: actions/cache@v5
+        with:
+          path: .cache/llama.cpp-src
+          key: llamacpp-cuda-src-b9244-v1
+          restore-keys: llamacpp-cuda-src-b9244-
+      - name: Install Linux build tools for CUDA llama.cpp
+        if: ${{ matrix.inference_edition == 'cuda' && matrix.platform == 'linux' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build git
+      - name: Set up CUDA 12.4 toolkit
+        if: ${{ matrix.inference_edition == 'cuda' && matrix.platform != 'macos' }}
+        uses: Jimver/cuda-toolkit@v0.2.22
+        id: cuda-toolkit
+        with:
+          cuda: '12.4.1'
+          method: network
+          sub-packages: |
+            nvcc
+            cudart
+            cublas
+            cublas_dev
+      - name: Verify CUDA compiler
+        if: ${{ matrix.inference_edition == 'cuda' && matrix.platform != 'macos' }}
+        shell: bash
+        run: nvcc --version
+      - name: Prepare llama.cpp CUDA source
+        if: ${{ matrix.inference_edition == 'cuda' && matrix.platform != 'macos' }}
+        shell: bash
+        run: bash scripts/ensure-llamacpp-cuda-source.sh
       - name: Build RTX 40 CUDA llama.cpp runtime
         if: ${{ matrix.inference_edition == 'cuda' && matrix.platform != 'macos' }}
+        shell: bash
         run: bash scripts/build-llamacpp-cuda-rtx40.sh ${{ matrix.platform == 'windows' && 'win' || 'linux' }}
       - name: Finalize CUDA llama.cpp edition bundle
         if: ${{ matrix.inference_edition == 'cuda' && matrix.platform != 'macos' }}
@@ -154,12 +189,11 @@ jobs:
           ZHIYUAN_UPDATE_VARIANT: ${{ matrix.inference_edition }}
       - name: Build macOS
         if: ${{ matrix.platform == 'macos' }}
-        run: bun run dist:mac:${{ matrix.arch }}
+        run: node scripts/ensure-build-version.js && bun run dist:mac:${{ matrix.arch }}
         env:
           NODE_OPTIONS: '--max-old-space-size=4096'
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           MODELSCOPE_TOKENS: ${{ secrets.MODELSCOPE_TOKENS }}
-          ZHIYUAN_UPDATE_VARIANT: ${{ matrix.inference_edition }}
       - name: Build Windows
         if: ${{ matrix.platform == 'windows' }}
         run: bun run dist:win:${{ matrix.inference_edition }}
@@ -167,14 +201,12 @@ jobs:
           NODE_OPTIONS: '--max-old-space-size=4096'
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           MODELSCOPE_TOKENS: ${{ secrets.MODELSCOPE_TOKENS }}
-          ZHIYUAN_UPDATE_VARIANT: ${{ matrix.inference_edition }}
       - name: Build Linux
         if: ${{ matrix.platform == 'linux' }}
         run: bun run dist:linux
         env:
           NODE_OPTIONS: '--max-old-space-size=4096'
           MODELSCOPE_TOKENS: ${{ secrets.MODELSCOPE_TOKENS }}
-          ZHIYUAN_UPDATE_VARIANT: ${{ matrix.inference_edition }}
       - name: Smoke bundled llama-server
         if: ${{ matrix.inference_edition != 'lite' }}
         shell: bash

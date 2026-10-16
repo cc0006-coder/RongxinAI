@@ -8,9 +8,8 @@ SRC_DIR="${LLAMACPP_SRC:-${ROOT_DIR}/.cache/llama.cpp-src}"
 BUILD_DIR="${SRC_DIR}/build-zhiyuan-cuda-rtx40-${PLATFORM}"
 EDITION_ROOT="${ROOT_DIR}/vendor/llamacpp/cuda"
 
-if [[ ! -d "${SRC_DIR}/.git" && ! -f "${SRC_DIR}/CMakeLists.txt" ]]; then
-  echo "[build-llamacpp-cuda-rtx40] Clone llama.cpp into ${SRC_DIR} first (LLAMACPP_SRC)." >&2
-  exit 1
+if [[ ! -f "${SRC_DIR}/CMakeLists.txt" ]]; then
+  bash "${ROOT_DIR}/scripts/ensure-llamacpp-cuda-source.sh"
 fi
 
 CMAKE_ARGS=(
@@ -43,9 +42,17 @@ esac
 cmake "${CMAKE_ARGS[@]}"
 cmake --build "${BUILD_DIR}" --config Release --target llama-server -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
+BUILT_SERVER="$(
+  find "${BUILD_DIR}" -type f -name "${EXECUTABLE_NAME}" 2>/dev/null | head -n 1
+)"
+if [[ -z "${BUILT_SERVER}" || ! -f "${BUILT_SERVER}" ]]; then
+  echo "[build-llamacpp-cuda-rtx40] Could not locate ${EXECUTABLE_NAME} under ${BUILD_DIR}" >&2
+  exit 1
+fi
+
 BIN_DIR="${EDITION_ROOT}/bin"
 mkdir -p "${BIN_DIR}"
-cp "${BUILD_DIR}/bin/${EXECUTABLE_NAME}" "${BIN_DIR}/${EXECUTABLE_NAME}"
+cp "${BUILT_SERVER}" "${BIN_DIR}/${EXECUTABLE_NAME}"
 chmod +x "${BIN_DIR}/${EXECUTABLE_NAME}" 2>/dev/null || true
 
 echo "[build-llamacpp-cuda-rtx40] Built ${BIN_DIR}/${EXECUTABLE_NAME} (sm_89, CUDA 12.4)."
