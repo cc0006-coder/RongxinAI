@@ -36,6 +36,11 @@ const {
   ensureSkillPythonRuntimes,
   checkSkillPythonRuntimeHealth,
 } = require('./setup-skill-python-runtime.js');
+const {
+  applyPackagingExcludes,
+  assertPackagedApp,
+  pinElectronLanguages,
+} = require('./packaging/assert-package-contents.cjs');
 
 const {
   buildWindowsResourceBundleManifest,
@@ -423,6 +428,8 @@ function installSkillDependencies() {
 }
 
 async function beforePack(context) {
+  const languages = pinElectronLanguages(context.packager.config);
+  console.log(`[electron-builder-hooks] Chromium locales pinned: ${languages.join(', ')}`);
   configureMagpieResources(context);
   configureMacAutoUpdateMetadata(context);
   ensureBundledChannelRuntime(context);
@@ -604,6 +611,10 @@ async function beforePack(context) {
     );
   }
 
+  // Re-apply after hooks append extra resources (Magpie, Windows components) so
+  // a token file or source map added to those trees cannot be packed.
+  applyPackagingExcludes(context.packager.config);
+
   if (!isWindowsTarget(context)) {
     return;
   }
@@ -611,6 +622,11 @@ async function beforePack(context) {
 
 async function afterPack(context) {
   verifyPackagedMagpie(context);
+  assertPackagedApp({
+    projectRoot: path.join(__dirname, '..'),
+    appOutDir: context.appOutDir,
+    electronLanguages: context.packager.config.electronLanguages,
+  });
   if (isMacTarget(context)) {
     const appName = context.packager.appInfo.productFilename;
     const appPath = path.join(context.appOutDir, `${appName}.app`);
