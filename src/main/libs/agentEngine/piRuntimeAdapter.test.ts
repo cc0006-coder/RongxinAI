@@ -43,6 +43,10 @@ vi.mock('../../workbenchTask/artifactWorkerPool', () => ({
   transformCoworkTextAsync: async (input: TextWorkerInput) => runTextWorkerOperation(input),
 }));
 
+vi.mock('../llamacppWorkModeContextGuard', () => ({
+  assertLlamaCppWorkModeContext: vi.fn(),
+}));
+
 const hoisted = vi.hoisted(() => {
   const mockSession = {
     prompt: vi.fn().mockResolvedValue(undefined),
