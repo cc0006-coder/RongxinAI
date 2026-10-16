@@ -137,10 +137,7 @@ test('stable release metadata does not inherit the build prerelease channel', ()
 });
 
 test('publish verification uses portable jq flags and preserves updater filenames per target', () => {
-  const workflow = readFileSync(
-    path.join(root, '.github', 'workflows', 'release.yml'),
-    'utf8',
-  );
+  const workflow = readFileSync(path.join(root, '.github', 'workflows', 'release.yml'), 'utf8');
   assert.match(workflow, /jq -s -r/);
   assert.doesNotMatch(workflow, /jq -rsr/);
   assert.match(workflow, /manifest\/electron\/\$\{target_file\}\/\$\{filename\}/);
@@ -173,10 +170,7 @@ test('release supply-chain gates track every checked-in npm lockfile', () => {
     path.join(root, 'scripts', 'ci', 'check-supply-chain-inputs.mjs'),
     'utf8',
   );
-  const workflow = readFileSync(
-    path.join(root, '.github', 'workflows', 'release.yml'),
-    'utf8',
-  );
+  const workflow = readFileSync(path.join(root, '.github', 'workflows', 'release.yml'), 'utf8');
   const policyLockfiles = Array.from(
     policy.matchAll(/^\s+'([^']+package-lock\.json)',?$/gm),
     match => match[1],
@@ -195,10 +189,7 @@ test('release supply-chain gates track every checked-in npm lockfile', () => {
 });
 
 test('unsigned macOS release builds do not receive empty signing credentials', () => {
-  const workflow = readFileSync(
-    path.join(root, '.github', 'workflows', 'release.yml'),
-    'utf8',
-  );
+  const workflow = readFileSync(path.join(root, '.github', 'workflows', 'release.yml'), 'utf8');
   const unsignedStart = workflow.indexOf('- name: Build unsigned macOS release');
   const signedStart = workflow.indexOf('- name: Build signed macOS release');
   const verifyStart = workflow.indexOf('- name: Verify signed and notarized macOS release');
@@ -356,10 +347,7 @@ test('installer-related pull requests build and exercise the Windows installer',
 });
 
 test('tag release publishes beta and archives build metadata for promotion', () => {
-  const workflow = readFileSync(
-    path.join(root, '.github', 'workflows', 'release.yml'),
-    'utf8',
-  );
+  const workflow = readFileSync(path.join(root, '.github', 'workflows', 'release.yml'), 'utf8');
 
   assert.match(workflow, /push:\s*\n\s*tags:/);
   assert.match(workflow, /TAG_NAME:/);
@@ -377,10 +365,7 @@ test('tag release publishes beta and archives build metadata for promotion', () 
 });
 
 test('stable promotion rechannels beta without rebuilding installers', () => {
-  const workflowText = readFileSync(
-    path.join(root, '.github', 'workflows', 'promote.yml'),
-    'utf8',
-  );
+  const workflowText = readFileSync(path.join(root, '.github', 'workflows', 'promote.yml'), 'utf8');
 
   assert.match(workflowText, /workflow_dispatch:/);
   assert.match(workflowText, /^\s+version:/m);

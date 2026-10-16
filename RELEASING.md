@@ -1,4 +1,4 @@
-# Releasing 知远智能体 (RongxinAI)
+# Releasing 知远智能体 (ZhiYuan Agent)
 
 Two workflows, one build, two channels.
 

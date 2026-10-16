@@ -873,12 +873,7 @@ export class AppUpdateCoordinator {
     const envelope: unknown =
       response.status === 304 ? cachedManifest?.envelope : await response.json();
     const payload = this.verifyAndDecodeManifest(envelope);
-    const info = toUpdateInfo(
-      payload,
-      target,
-      this.isElectronUpdaterEnabled(target),
-      channel,
-    );
+    const info = toUpdateInfo(payload, target, this.isElectronUpdaterEnabled(target), channel);
     if (response.status !== 304) {
       const receivedEtag = response.headers.get('etag');
       if (receivedEtag)

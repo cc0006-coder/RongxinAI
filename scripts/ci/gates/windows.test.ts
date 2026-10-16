@@ -68,15 +68,16 @@ test('PRs restore without saving; verified main runs publish the same cache grap
 test.each([['release.yml', 'build-release', 'Assemble Windows release payload']])(
   'compression qualification blocks the publication path in %s',
   (file, job, publishName) => {
-  const releaseSteps = workflow(file).jobs[job].steps;
-  const index = releaseSteps.findIndex(step => step.uses === compressionAction);
-  expect(index).toBeGreaterThan(-1);
-  expect(releaseSteps[index].if).toBe("${{ matrix.platform == 'windows' }}");
-  expect(releaseSteps[index]['continue-on-error']).toBeUndefined();
-  const publishIndex = releaseSteps.findIndex(step => step.name === publishName);
-  expect(publishIndex).toBeGreaterThan(index);
-  expect(releaseSteps[publishIndex].if).toBe("${{ matrix.platform == 'windows' }}");
-});
+    const releaseSteps = workflow(file).jobs[job].steps;
+    const index = releaseSteps.findIndex(step => step.uses === compressionAction);
+    expect(index).toBeGreaterThan(-1);
+    expect(releaseSteps[index].if).toBe("${{ matrix.platform == 'windows' }}");
+    expect(releaseSteps[index]['continue-on-error']).toBeUndefined();
+    const publishIndex = releaseSteps.findIndex(step => step.name === publishName);
+    expect(publishIndex).toBeGreaterThan(index);
+    expect(releaseSteps[publishIndex].if).toBe("${{ matrix.platform == 'windows' }}");
+  },
+);
 
 test('shared qualification fails on thresholds and retains reports without hiding failure', () => {
   const action = load(
