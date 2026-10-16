@@ -24,7 +24,7 @@ installer preview, browser preview) now run as conditional jobs inside CI instea
 request workflows. Browser preview runs when the renderer, shared contracts, or
 `scripts/preview` change. Linux and Windows install workflows remain reusable/manual workflows.
 The parent CI owns concurrency cancellation and exposes the required `ci-gate` check
-after PR metadata validation and merge-gate succeed.
+after merge-gate succeeds.
 
 ## Release and nightly checks
 
@@ -67,9 +67,9 @@ the miss and investigate the measured bottleneck without relaxing installation t
 ## Required-check rollout and measurement
 
 The default branch requires `ci-gate` and retains `merge-gate` from GitHub Actions
-(app ID 15368), with the branch up to date before merging. `ci-gate` validates PR
-title/body and requires `merge-gate` to pass; inventory drift is checked in the lint
-job via `.github/check-devops-config.py` against `.github/devops-ci.json` (CI only).
+(app ID 15368), with the branch up to date before merging. `ci-gate` requires
+`merge-gate` to pass; inventory drift is checked in the lint job via
+`.github/check-devops-config.py` against `.github/devops-ci.json` (CI only).
 `merge-gate` retains application job validation. Do not require conditional platform
 jobs directly.
 
