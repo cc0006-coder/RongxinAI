@@ -103,7 +103,7 @@ export type LlamaCppBackendInfo = LlamaCppBackendRef & {
   installed: boolean;
   recommended: boolean;
   current: boolean;
-  source: 'manifest' | 'local';
+  source: 'manifest' | 'local' | 'bundled';
   downloadSizeBytes?: number;
 };
 

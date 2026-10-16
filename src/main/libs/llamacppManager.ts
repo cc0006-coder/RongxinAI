@@ -38,8 +38,18 @@ import {
   recommendLlamaCppBackend,
   resolveLlamaCppBackendDownloadSize,
   syncCurrentBackend,
+  toBackendRef,
   uninstallLlamaCppBackend,
 } from './llamacppBackendManager';
+import { resolveBundledLlamaCppBackendDir } from './llamacppBackendResources';
+import {
+  applyLlamaCppBackendPreference,
+  linkBundledBackendIntoRuntime,
+  listBundledLlamaCppBackends,
+  LLAMACPP_BUNDLED_BACKEND_DIRECTORY,
+  resolvePreferredLlamaCppExecutable,
+  shouldActivateResolvedBackend,
+} from './llamacppBundledBackend';
 import {
   backendRequiresDeviceValidation,
   validateBackendDevices,
@@ -419,6 +429,42 @@ export class LlamaCppManager extends EventEmitter {
     }
 
     const runtimeRoot = getUserLlamaCppRuntimeRoot();
+    const preferredRuntime = await resolvePreferredLlamaCppExecutable({
+      platform: process.platform,
+      arch: process.arch,
+      bundledRoot: path.join(
+        resolveBundledLlamaCppBackendDir(),
+        LLAMACPP_BUNDLED_BACKEND_DIRECTORY,
+      ),
+      userRuntimeRoot: runtimeRoot,
+      desiredBackend: config.runtimeBackend,
+    });
+    if (shouldActivateResolvedBackend(preferredRuntime, config.runtimeBackend)) {
+      if (preferredRuntime.source === 'bundled') {
+        linkBundledBackendIntoRuntime(runtimeRoot, preferredRuntime);
+      }
+      const backendRef = toBackendRef(preferredRuntime.version, preferredRuntime.backend);
+      syncCurrentBackend(runtimeRoot, backendRef);
+      const executablePath = getLlamaCppCurrentExecutablePath(runtimeRoot, process.platform);
+      this.executablePath = executablePath;
+      this.setStatus({
+        status: 'installed',
+        executablePath,
+        managedByApp: false,
+      });
+      this.emit('install-progress', {
+        phase: 'done',
+        modelId: LLAMACPP_RUNTIME_PROGRESS_KEY,
+        modelName: preferredRuntime.versionBackend,
+        percent: 100,
+      } satisfies LlamaCppInstallProgress);
+      return {
+        success: true,
+        backend: backendRef,
+        executablePath,
+        plan: { kind: 'ready', executablePath },
+      };
+    }
     const nvidiaSnapshot = process.platform === 'win32' ? await getNvidiaSmiSnapshot() : null;
     const manifest = await fetchLlamaCppBackendManifest();
     const ref = recommendLlamaCppBackend({
@@ -554,15 +600,34 @@ export class LlamaCppManager extends EventEmitter {
     }
 
     try {
+      const runtimeRoot = getUserLlamaCppRuntimeRoot();
+      const config = this.getServiceConfig();
       const nvidiaSnapshot = process.platform === 'win32' ? await getNvidiaSmiSnapshot() : null;
+      const bundledRoot = path.join(
+        resolveBundledLlamaCppBackendDir(),
+        LLAMACPP_BUNDLED_BACKEND_DIRECTORY,
+      );
       const result = await listLlamaCppBackends({
-        runtimeRoot: getUserLlamaCppRuntimeRoot(),
+        runtimeRoot,
         platform: process.platform,
         arch: process.arch,
         hasNvidiaGpu: Boolean(nvidiaSnapshot?.available && nvidiaSnapshot.gpus.length > 0),
-        config: this.getServiceConfig(),
+        config,
       });
-      const nextResult = { success: true as const, ...result };
+      const preferred = await resolvePreferredLlamaCppExecutable({
+        platform: process.platform,
+        arch: process.arch,
+        bundledRoot,
+        userRuntimeRoot: runtimeRoot,
+        desiredBackend: config.runtimeBackend,
+      });
+      const annotated = applyLlamaCppBackendPreference(
+        result,
+        listBundledLlamaCppBackends(bundledRoot),
+        shouldActivateResolvedBackend(preferred, config.runtimeBackend) ? preferred : undefined,
+        { platform: process.platform, arch: process.arch },
+      );
+      const nextResult = { success: true as const, ...annotated };
       // Cache only a successful, short-lived snapshot; installed-state changes clear it.
       this.backendListCache = {
         key: cacheKey,

@@ -160,6 +160,7 @@
     "engram:runtime:win-arm64": "node scripts/download-engram-runtime.cjs win-arm64",
     "engram:runtime:linux-x64": "node scripts/download-engram-runtime.cjs linux-x64",
     "engram:runtime:linux-arm64": "node scripts/download-engram-runtime.cjs linux-arm64",
+    "llamacpp:bundle": "node scripts/bundle-llamacpp-backends.cjs",
     "llamacpp:runtime:host": "node scripts/llamacpp-runtime-host.cjs",
     "llamacpp:runtime:download": "node scripts/download-llamacpp-runtime.cjs",
     "llamacpp:runtime:download:mac-arm64": "node scripts/download-llamacpp-runtime.cjs mac-arm64",

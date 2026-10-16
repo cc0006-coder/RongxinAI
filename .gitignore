@@ -29,6 +29,7 @@ vendor/openclaw-plugins/
 vendor/channel-runtime/
 MCPs/feishu/runtime/
 vendor/llamacpp-runtime/
+resources/llamacpp-backends/bundled/
 vendor/engram-runtime/
 
 # Tar archives generated during Windows packaging

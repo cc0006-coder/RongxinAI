@@ -20,7 +20,15 @@ import type {
   LlamaCppStatusSnapshot,
 } from '../../shared/llamacpp';
 import { LlamaCppBackendError, LlamaCppRuntimeBackend } from '../../shared/llamacpp';
-import { readBundledLlamaCppBackendManifest } from './llamacppBackendResources';
+import {
+  readBundledLlamaCppBackendManifest,
+  resolveBundledLlamaCppBackendDir,
+} from './llamacppBackendResources';
+import {
+  findBundledLlamaCppBackend,
+  linkBundledBackendIntoRuntime,
+  LLAMACPP_BUNDLED_BACKEND_DIRECTORY,
+} from './llamacppBundledBackend';
 import { listLlamaCppRuntimeDevices } from './llamacppManager';
 import { LlamaCppRuntimeTargetId } from './llamacppRuntimeConstants';
 import { copyDirectoryContents, resolveLlamaCppExecutableName } from './llamacppRuntimeInstaller';
@@ -574,10 +582,30 @@ export async function installLlamaCppBackend(input: {
   signal?: AbortSignal;
   onProgress?: BackendInstallProgressReporter;
 }): Promise<LlamaCppRuntimeInstallResult> {
-  const manifest = input.manifest ?? (await fetchLlamaCppBackendManifest());
   if (input.signal?.aborted) {
     return { ...failedInstall('Download cancelled.'), cancelled: true };
   }
+  const bundledBackend = findBundledLlamaCppBackend(
+    path.join(resolveBundledLlamaCppBackendDir(), LLAMACPP_BUNDLED_BACKEND_DIRECTORY),
+    input.ref,
+    input.platform,
+    input.arch,
+  );
+  if (bundledBackend) {
+    linkBundledBackendIntoRuntime(input.runtimeRoot, bundledBackend);
+    if (input.switchCurrent !== false) syncCurrentBackend(input.runtimeRoot, input.ref);
+    const bundledExecutablePath = getLlamaCppCurrentExecutablePath(
+      input.runtimeRoot,
+      input.platform,
+    );
+    return {
+      success: true,
+      backend: input.ref,
+      executablePath: bundledExecutablePath,
+      plan: { kind: 'ready', executablePath: bundledExecutablePath },
+    };
+  }
+  const manifest = input.manifest ?? (await fetchLlamaCppBackendManifest());
   const entry = findManifestEntry(manifest, input.ref);
   if (!entry) {
     return failedInstall(`llama.cpp backend is not available: ${input.ref.versionBackend}`);

@@ -11,6 +11,11 @@ import type {
   LlamaCppStatusSnapshot,
 } from '../../shared/llamacpp';
 import { LlamaCppRuntimeBackend, LlamaCppRuntimeCudaMajor } from '../../shared/llamacpp';
+import { resolveBundledLlamaCppBackendDir } from './llamacppBackendResources';
+import {
+  LLAMACPP_BUNDLED_BACKEND_DIRECTORY,
+  resolvePreferredLlamaCppExecutable,
+} from './llamacppBundledBackend';
 import { isPathInside } from './llamacppModelCatalog';
 import { LlamaCppRuntimeTargetId } from './llamacppRuntimeConstants';
 import { resolveLlamaCppRuntimeTargetId } from './llamacppRuntimeInstaller';
@@ -19,8 +24,27 @@ export { prependEnvPathEntry, resolveExecutableDir } from './llamacppProcessRunt
 const execFileAsync = promisify(execFile);
 
 export async function findLlamaCppExecutable(
-  _config: LlamaCppServiceConfig = {},
+  config: LlamaCppServiceConfig = {},
 ): Promise<string | null> {
+  const envPath = process.env.LLAMACPP_BIN?.trim();
+  if (envPath && fs.existsSync(envPath)) return envPath;
+
+  try {
+    const preferred = await resolvePreferredLlamaCppExecutable({
+      platform: process.platform,
+      arch: process.arch,
+      bundledRoot: path.join(
+        resolveBundledLlamaCppBackendDir(),
+        LLAMACPP_BUNDLED_BACKEND_DIRECTORY,
+      ),
+      userRuntimeRoot: getUserLlamaCppRuntimeRoot(),
+      desiredBackend: config.runtimeBackend,
+    });
+    if (preferred && fs.existsSync(preferred.executablePath)) return preferred.executablePath;
+  } catch (error) {
+    console.warn('[LlamaCpp] bundled backend lookup failed:', error);
+  }
+
   for (const candidate of buildLlamaCppExecutableCandidates({
     platform: process.platform,
     isPackaged: app.isPackaged,
@@ -235,6 +259,17 @@ function getManagedRuntimeRootForExecutable(executablePath: string): string | un
   const cwdCurrentRoot = path.join(process.cwd(), 'vendor', 'llamacpp-runtime', 'current');
   if (isPathInside(executablePath, cwdCurrentRoot)) {
     return cwdCurrentRoot;
+  }
+  return findAncestorRuntimeRoot(executablePath);
+}
+
+function findAncestorRuntimeRoot(executablePath: string): string | undefined {
+  let current = path.dirname(path.resolve(executablePath));
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (fs.existsSync(path.join(current, 'runtime-build-info.json'))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
   }
   return undefined;
 }

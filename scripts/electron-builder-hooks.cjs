@@ -20,6 +20,11 @@ const { spawnSync } = require('child_process');
 const { ensurePortablePythonRuntime, checkRuntimeHealth } = require('./setup-python-runtime.js');
 const { configureMagpieResources, verifyPackagedMagpie } = require('./magpie-runtime.cjs');
 const {
+  bundleLlamaCppBackends,
+  resolveReleasePin,
+  verifyBundledLlamaCpp,
+} = require('./bundle-llamacpp-backends.cjs');
+const {
   ensurePortableUvRuntime,
   checkRuntimeHealth: checkUvRuntimeHealth,
 } = require('./setup-uv-runtime.js');
@@ -425,6 +430,12 @@ function installSkillDependencies() {
 async function beforePack(context) {
   configureMagpieResources(context);
   configureMacAutoUpdateMetadata(context);
+  const projectRoot = path.join(__dirname, '..');
+  await bundleLlamaCppBackends({
+    rootDir: projectRoot,
+    platform: context.electronPlatformName,
+    arch: resolveTargetArch(context),
+  });
   ensureBundledChannelRuntime(context);
   // Install skill dependencies first (for all platforms)
   installSkillDependencies();
@@ -538,7 +549,6 @@ async function beforePack(context) {
   if (isWindowsTarget(context)) {
     // The installer remains fully offline, while each non-llama.cpp component
     // gets an independent content ID so upgrades expand only changed pieces.
-    const projectRoot = path.join(__dirname, '..');
     const componentsDir = path.join(projectRoot, 'build-tar', 'windows-components');
     mkdirSync(componentsDir, { recursive: true });
     const sevenZipPath = resolveWindows7zaPath();
@@ -611,6 +621,21 @@ async function beforePack(context) {
 
 async function afterPack(context) {
   verifyPackagedMagpie(context);
+  const resourcesDir =
+    context.electronPlatformName === 'darwin'
+      ? path.join(
+          context.appOutDir,
+          `${context.packager.appInfo.productFilename}.app`,
+          'Contents',
+          'Resources',
+        )
+      : path.join(context.appOutDir, 'resources');
+  verifyBundledLlamaCpp({
+    resourcesDir,
+    platform: context.electronPlatformName,
+    arch: resolveTargetArch(context),
+    releaseTag: resolveReleasePin(path.join(__dirname, '..')).version,
+  });
   if (isMacTarget(context)) {
     const appName = context.packager.appInfo.productFilename;
     const appPath = path.join(context.appOutDir, `${appName}.app`);
